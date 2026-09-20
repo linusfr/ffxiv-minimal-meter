@@ -1,0 +1,139 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # ── Gate 1: hooks and the next version number ──────────────────────────────
+  # The version is computed with --dry so nothing is tagged yet. Tagging before
+  # the build is what leaves orphan releases behind when a build breaks.
+  checks:
+    name: checks
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.semrel.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install Hermit
+        run: curl -fsSL https://github.com/cashapp/hermit/releases/download/stable/install.sh | /bin/bash
+
+      - name: Activate Hermit and run prek
+        run: |
+          source bin/activate-hermit
+          prek run --all-files
+
+      - name: Next version (dry run — tags nothing)
+        id: semrel
+        uses: go-semantic-release/action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          allow-initial-development-versions: true
+          dry: true
+
+  # ── Gate 2: it has to actually build ───────────────────────────────────────
+  build:
+    name: build
+    needs: checks
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Download Dalamud (staging)
+        shell: pwsh
+        run: |
+          Invoke-WebRequest "https://github.com/goatcorp/dalamud-distrib/raw/main/stg/latest.zip" -OutFile dalamud.zip
+          Expand-Archive dalamud.zip -DestinationPath "$env:APPDATA\XIVLauncher\addon\Hooks\dev" -Force
+
+      # Pull requests and release-less pushes build at a throwaway version; only
+      # a push that semantic-release would actually cut gets the real one.
+      - name: Build
+        shell: pwsh
+        run: |
+          $ver = "${{ needs.checks.outputs.version }}"
+          if (-not $ver) { $ver = "0.0.0" }
+          dotnet build src/MinimalMeter.csproj --configuration Release -p:Version=$ver
+
+      - name: Collect DalamudPackager output
+        shell: pwsh
+        run: |
+          $zip = "src/bin/Release/MinimalMeter/latest.zip"
+          if (-not (Test-Path $zip)) { Write-Error "DalamudPackager zip not found at $zip"; exit 1 }
+          Copy-Item $zip MinimalMeter.zip
+
+      - name: Upload for the release job
+        uses: actions/upload-artifact@v7
+        with:
+          name: plugin-zip
+          path: MinimalMeter.zip
+          retention-days: 1
+
+  # ── Only now is anything tagged, released or committed ─────────────────────
+  release:
+    name: release
+    needs: [checks, build]
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request' &&
+      needs.checks.outputs.version != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: plugin-zip
+
+      - name: Tag and create the release
+        uses: go-semantic-release/action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          allow-initial-development-versions: true
+          changelog-file: CHANGELOG.md
+
+      - name: Attach the build
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ needs.checks.outputs.version }}
+          files: MinimalMeter.zip
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Point pluginmaster at the new release
+        env:
+          VERSION: ${{ needs.checks.outputs.version }}
+        run: |
+          python3 - <<'PY'
+          import json, os, time
+          version = os.environ["VERSION"]
+          entries = json.load(open("pluginmaster.json"))
+          entries[0]["AssemblyVersion"] = version + ".0"
+          entries[0]["LastUpdated"] = int(time.time())
+          json.dump(entries, open("pluginmaster.json", "w"), indent=2)
+          PY
+
+      - name: Commit the manifest
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pluginmaster.json
+          if [ -f CHANGELOG.md ]; then git add CHANGELOG.md; fi
+          git diff --cached --quiet || git commit -m "chore: pluginmaster v${VERSION} [skip ci]"
+          git push
+        env:
+          VERSION: ${{ needs.checks.outputs.version }}

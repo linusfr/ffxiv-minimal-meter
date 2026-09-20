@@ -1,0 +1,33 @@
+# Build output
+src/bin/
+src/obj/
+
+# Dalamud auto-generated assembly info
+*.AssemblyInfo.cs
+*.AssemblyAttributes.cs
+
+# Session data, if anyone ever copies a combat log into the tree. Upstream
+# blanket-ignored *.json here, which silently swallowed any new config file;
+# combat logs are .jsonl and live in Dalamud's config dir, not the repo.
+combat_logs/
+*.jsonl
+
+# Loose build artifacts
+MinimalMeter.dll
+SkiaSharp.dll
+libSkiaSharp.dll
+MinimalMeter.zip
+pack/
+
+# AI context files
+CLAUDE.md
+AGENTS.md
+.ai-session-state.md
+
+# IDE / OS
+.vs/
+.vscode/
+*.user
+*.suo
+.DS_Store
+Thumbs.db

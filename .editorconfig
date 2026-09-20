@@ -1,0 +1,45 @@
+# Deterministic rules for `just fmt` / `just fmt-check`. Without this file
+# dotnet format only enforces compiler defaults, so formatting drifts silently.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml,json}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[justfile]
+indent_size = 4
+
+[*.cs]
+indent_size = 4
+
+# ── Language conventions, matching how this codebase is already written ──────
+csharp_style_namespace_declarations = file_scoped:warning
+csharp_prefer_braces = when_multiline:suggestion
+csharp_using_directive_placement = outside_namespace:warning
+csharp_style_var_for_built_in_types = false:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_style_expression_bodied_properties = true:suggestion
+
+dotnet_sort_system_directives_first = true
+dotnet_style_qualification_for_field = false:suggestion
+dotnet_style_qualification_for_property = false:suggestion
+dotnet_style_object_initializer = true:suggestion
+dotnet_style_collection_initializer = true:suggestion
+dotnet_style_prefer_conditional_expression_over_assignment = true:silent
+dotnet_style_prefer_conditional_expression_over_return = true:silent
+
+# The codebase aligns fields and comments into columns deliberately. `just fmt`
+# runs only the style and analyzer passes for the same reason — `dotnet format
+# whitespace` would flatten that alignment across every file.
+dotnet_diagnostic.IDE0055.severity = none

@@ -1,0 +1,48 @@
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+  <PropertyGroup>
+    <!-- Overridden by CI: dotnet build -p:Version=$(semantic-release output) -->
+    <Version Condition="'$(Version)' == ''">0.1.0</Version>
+    <AssemblyName>MinimalMeter</AssemblyName>
+    <RootNamespace>MinimalMeter</RootNamespace>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+
+  <!-- DalamudPackager manifest fields -->
+  <PropertyGroup>
+    <Author>linusfr</Author>
+    <Name>Minimal Meter</Name>
+    <Punchline>A quiet damage meter that gets out of the way.</Punchline>
+    <Description>Real-time damage, healing and DPS for you and your party, drawn as a transparent overlay with no window chrome. Derived from Sansflaire's Damage Meter.</Description>
+    <ApplicableVersion>any</ApplicableVersion>
+    <DalamudApiLevel>15</DalamudApiLevel>
+    <Tags>combat;utility;meter;dps;parsing</Tags>
+    <RepoUrl>https://github.com/linusfr/ffxiv-minimal-meter</RepoUrl>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp"                    Version="3.119.4" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="3.119.4" />
+  </ItemGroup>
+
+  <!--
+    SkiaSharp 3.119 started shipping native .pdb symbols: ~256 MB of them across
+    three architectures, which took the release zip from 19 MB to 82 MB. It also
+    carries win-x86, win-arm64 and osx natives.
+
+    Dalamud is x64-on-Windows only, so everything except runtimes/win-x64 is
+    dead weight, and the symbols are dead weight regardless. Strip both before
+    DalamudPackager sees the output.
+  -->
+  <Target Name="TrimUnusedNativeAssets" AfterTargets="ResolveReferences">
+    <ItemGroup>
+      <ReferenceCopyLocalPaths
+        Remove="@(ReferenceCopyLocalPaths)"
+        Condition="'%(Extension)' == '.pdb' and $([System.String]::Copy('%(RelativeDir)').Contains('native'))" />
+      <ReferenceCopyLocalPaths
+        Remove="@(ReferenceCopyLocalPaths)"
+        Condition="$([System.String]::Copy('%(RelativeDir)').Replace('\','/').Contains('runtimes/win-x86/')) or
+                   $([System.String]::Copy('%(RelativeDir)').Replace('\','/').Contains('runtimes/win-arm64/')) or
+                   $([System.String]::Copy('%(RelativeDir)').Replace('\','/').Contains('runtimes/osx/'))" />
+    </ItemGroup>
+  </Target>
+</Project>

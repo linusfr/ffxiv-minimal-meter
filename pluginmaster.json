@@ -1,0 +1,24 @@
+[
+  {
+    "Author": "linusfr",
+    "Name": "Minimal Meter",
+    "InternalName": "MinimalMeter",
+    "Punchline": "A quiet damage meter that gets out of the way.",
+    "Description": "Real-time damage, healing and DPS for you and your party, drawn as a transparent overlay with no window chrome. Derived from Sansflaire's Damage Meter.",
+    "ApplicableVersion": "any",
+    "DalamudApiLevel": 15,
+    "Tags": [
+      "combat",
+      "utility",
+      "meter",
+      "dps",
+      "parsing"
+    ],
+    "AssemblyVersion": "0.1.0",
+    "RepoUrl": "https://github.com/linusfr/ffxiv-minimal-meter",
+    "DownloadLinkInstall": "https://github.com/linusfr/ffxiv-minimal-meter/releases/latest/download/MinimalMeter.zip",
+    "DownloadLinkUpdate": "https://github.com/linusfr/ffxiv-minimal-meter/releases/latest/download/MinimalMeter.zip",
+    "DownloadLinkTesting": "https://github.com/linusfr/ffxiv-minimal-meter/releases/latest/download/MinimalMeter.zip",
+    "LastUpdated": 0
+  }
+]
