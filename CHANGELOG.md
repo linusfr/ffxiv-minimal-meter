@@ -1,14 +1,11 @@
-## 1.0.0 (2026-09-20)
-
-#### Feature
-
-* bootstrap (76338819)
+## 1.0.1 (2026-09-20)
 
 #### Bug Fixes
 
-* no v prefix on versioning (ad6f0c0f)
+* add png (3b11a284)
 
 #### Chores
 
-* run prek (e45916bf)
-* pluginmaster v0.1.0 [skip ci] (45d5f9bb)
+* update readme (04824c97)
+* pluginmaster 1.0.0 [skip ci] (607bfbe0)
+
