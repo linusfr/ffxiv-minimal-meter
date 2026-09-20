@@ -19,6 +19,7 @@
     "DownloadLinkInstall": "https://github.com/linusfr/ffxiv-minimal-meter/releases/latest/download/MinimalMeter.zip",
     "DownloadLinkUpdate": "https://github.com/linusfr/ffxiv-minimal-meter/releases/latest/download/MinimalMeter.zip",
     "DownloadLinkTesting": "https://github.com/linusfr/ffxiv-minimal-meter/releases/latest/download/MinimalMeter.zip",
-    "LastUpdated": 1789934751
+    "LastUpdated": 1789934751,
+    "IconUrl": "https://raw.githubusercontent.com/linusfr/ffxiv-minimal-meter/main/images/icon.png"
   }
 ]

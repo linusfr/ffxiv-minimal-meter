@@ -17,7 +17,17 @@
     <DalamudApiLevel>15</DalamudApiLevel>
     <Tags>combat;utility;meter;dps;parsing</Tags>
     <RepoUrl>https://github.com/linusfr/ffxiv-minimal-meter</RepoUrl>
+    <!-- DalamudPackager writes this into the shipped manifest; the installer
+         fetches the image from here, so the zip does not carry it. -->
+    <IconUrl>https://raw.githubusercontent.com/linusfr/ffxiv-minimal-meter/main/images/icon.png</IconUrl>
   </PropertyGroup>
+
+  <!-- Dalamud shows images/icon.png next to the DLL for local and dev installs;
+       repo installs use IconUrl from the manifest. Ship both. -->
+  <ItemGroup>
+    <Content Include="..\images\icon.png" Link="images\icon.png"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="SkiaSharp"                    Version="3.119.4" />
