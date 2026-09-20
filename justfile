@@ -32,10 +32,17 @@ build-release: restore
 
 # Build and drop the plugin into XIVLauncher's devPlugins for /xlplugins dev mode
 install: build
+    rm -rf {{dev_plugins}}
     mkdir -p {{dev_plugins}}
-    cp src/bin/Debug/MinimalMeter.dll {{dev_plugins}}/
-    cp src/bin/Debug/SkiaSharp.dll {{dev_plugins}}/ 2>/dev/null || true
-    @echo "Installed to {{dev_plugins}} — reload dev plugins in /xlplugins"
+    # Copy the whole build output, not a hand-picked subset. Dalamud identifies a
+    # dev plugin by the MinimalMeter.json manifest sitting next to the DLL, needs
+    # the .deps.json to resolve assemblies, and SkiaSharp needs its native library
+    # under runtimes/win-x64/. Copying only the two managed DLLs makes the plugin
+    # silently invisible — Dalamud never even logs an attempt.
+    cp -r src/bin/Debug/. {{dev_plugins}}/
+    @echo "Installed to {{dev_plugins}}:"
+    @ls {{dev_plugins}}
+    @echo "Now: /xlplugins -> Dev Tools -> reload, or restart the game."
 
 # Remove build output
 clean:
