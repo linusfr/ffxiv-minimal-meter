@@ -36,7 +36,9 @@ jobs:
         uses: go-semantic-release/action@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          allow-initial-development-versions: true
+          # Tags are bare: 1.2.3, not v1.2.3. The "v" is hardcoded in the GitHub
+          # provider and strip_v_tag_prefix is the documented way out.
+          custom-arguments: '--provider-opt strip_v_tag_prefix=true'
           dry: true
 
   # ── Gate 2: it has to actually build ───────────────────────────────────────
@@ -104,13 +106,13 @@ jobs:
         uses: go-semantic-release/action@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          allow-initial-development-versions: true
+          custom-arguments: '--provider-opt strip_v_tag_prefix=true'
           changelog-file: CHANGELOG.md
 
       - name: Attach the build
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: v${{ needs.checks.outputs.version }}
+          tag_name: ${{ needs.checks.outputs.version }}
           files: MinimalMeter.zip
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -133,7 +135,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add pluginmaster.json
           if [ -f CHANGELOG.md ]; then git add CHANGELOG.md; fi
-          git diff --cached --quiet || git commit -m "chore: pluginmaster v${VERSION} [skip ci]"
+          git diff --cached --quiet || git commit -m "chore: pluginmaster ${VERSION} [skip ci]"
           git push
         env:
           VERSION: ${{ needs.checks.outputs.version }}
