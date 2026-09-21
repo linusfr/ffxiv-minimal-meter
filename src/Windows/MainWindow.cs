@@ -51,7 +51,14 @@ public sealed class MainWindow : IDisposable
     private float   _lastAutoHeight;
     private Vector2 _lastWindowPos;
     private Vector2 _lastWindowSize;
+
+    // Until the window has been laid out once, _lastWindowPos/_lastWindowSize are
+    // zero — forcing size or position from them on the first frames overwrote the
+    // values ImGui had just restored from dalamudUI.ini, which is why a pinned
+    // window came back at the default size and place after a restart.
+    private bool _windowSeen;
     private int     _lastGroupCount = 1;
+    private int     _lastCombatantCount = 2;   // assume a total until proven otherwise
     private DateTime? _leftCombatAt;
     private DateTime? _emptySince;
     private DateTime _demoStart = DateTime.MinValue;
@@ -88,6 +95,7 @@ public sealed class MainWindow : IDisposable
         float dynHeaderH = MeterCanvas.GetEffectiveHeaderH(new MeterCanvas.DisplayOptions
         {
             ShowEncounterTotal = Config.ShowEncounterTotal,
+            CombatantCount     = _lastCombatantCount,
             UiScale            = Config.UiScale,   // or the header measures at 1x
         });
         float dynRowH   = MeterCanvas.EffectiveRowH(new MeterCanvas.DisplayOptions
@@ -121,16 +129,25 @@ public sealed class MainWindow : IDisposable
             // Lock height to the content, leave width draggable.
             ImGui.SetNextWindowSizeConstraints(new Vector2(MinWidth, autoH),
                                                new Vector2(1000, autoH));
+
             // Force it: a constraint alone will not shrink a window that ImGui
             // already sized larger, so dropping 8 rows to 1 would never contract.
-            ImGui.SetNextWindowSize(new Vector2(
-                _lastWindowSize.X >= MinWidth ? _lastWindowSize.X : 420f, autoH),
-                ImGuiCond.Always);
+            // Only once the restored geometry has been observed, though.
+            if (_windowSeen)
+            {
+                ImGui.SetNextWindowSize(new Vector2(
+                    _lastWindowSize.X >= MinWidth ? _lastWindowSize.X : 420f, autoH),
+                    ImGuiCond.Always);
+            }
+            else
+            {
+                ImGui.SetNextWindowSize(new Vector2(420, autoH), ImGuiCond.FirstUseEver);
+            }
 
             // Grew or shrank since last frame. Growing UP means moving the top
             // edge by the delta so the bottom stays put; growing DOWN means
             // leaving the position alone, since ImGui already anchors top-left.
-            if (Config.Grow == GrowDirection.Up
+            if (_windowSeen && Config.Grow == GrowDirection.Up
                 && _lastAutoHeight > 0f && Math.Abs(autoH - _lastAutoHeight) > 0.5f)
             {
                 // _lastWindowPos is captured after Begin() below; calling
@@ -164,6 +181,7 @@ public sealed class MainWindow : IDisposable
         // here so a user drag is picked up like any other position change.
         _lastWindowPos  = ImGui.GetWindowPos();
         _lastWindowSize = ImGui.GetWindowSize();
+        _windowSeen     = true;
 
 
         DrawCanvasHeader();   // renders SkiaSharp canvas + draws header slice
@@ -266,6 +284,7 @@ public sealed class MainWindow : IDisposable
             ShowPercentage     = Config.ShowPercentage,
             BarColorAbgr       = Config.GetBarColor(metric),
             ShowEncounterTotal = Config.ShowEncounterTotal,
+            CombatantCount     = groups.Sum(g => g.Combatants.Count),
             ShowGroupHeaders   = ShowHeadersFor(groups.Count),
             TextShadow         = Config.TextShadow,
             OutlineStrength    = Config.OutlineStrength,
@@ -283,7 +302,8 @@ public sealed class MainWindow : IDisposable
             ShowOverhealing    = Config.ShowOverhealing,
         };
 
-        _lastGroupCount = Math.Max(1, groups.Count);
+        _lastGroupCount      = Math.Max(1, groups.Count);
+        _lastCombatantCount  = opts.CombatantCount;
         _headerH = MeterCanvas.GetEffectiveHeaderH(opts);
 
         // Use last frame's TotalHeight to decide whether a scrollbar is needed

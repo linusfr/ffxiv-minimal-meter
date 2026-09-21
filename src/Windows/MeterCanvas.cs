@@ -132,6 +132,7 @@ public sealed class MeterCanvas : IDisposable
         public bool ShowPercentage;
         public uint BarColorAbgr;
         public bool  ShowEncounterTotal;
+        public int   CombatantCount;   // suppresses the total row when it would duplicate the only row
         public bool  ShowGroupHeaders;
         public float ScrollbarW; // reserved right margin when scrollbar is visible (px)
         public bool  TextShadow;      // draw an outline behind glyphs
@@ -186,10 +187,14 @@ public sealed class MeterCanvas : IDisposable
 
 
     // ── Dynamic header height ─────────────────────────────────────────────────
+    /// A total over one combatant is that combatant, printed twice.
+    private static bool WantsTotalRow(DisplayOptions o)
+        => o.ShowEncounterTotal && o.CombatantCount > 1;
+
     public static float GetEffectiveHeaderH(DisplayOptions opts)
         // The encounter summary is one row styled like the combatant rows below
         // it, not a 64px panel with a zone name, a timer and a title strip.
-        => opts.ShowEncounterTotal ? EffectiveRowH(opts) : 0f;
+        => WantsTotalRow(opts) ? EffectiveRowH(opts) : 0f;
 
     // ── Group input ───────────────────────────────────────────────────────────
     public struct GroupData
@@ -276,7 +281,7 @@ public sealed class MeterCanvas : IDisposable
         // every column too narrow, so the totals ran into each other.
         var measured = new List<CombatantData>();
         foreach (var g in groups) measured.AddRange(g.Combatants);
-        if (opts.ShowEncounterTotal) measured.Add(BuildTotal(groups));
+        if (WantsTotalRow(opts)) measured.Add(BuildTotal(groups));
 
         {
             foreach (var c in measured)
@@ -564,7 +569,7 @@ public sealed class MeterCanvas : IDisposable
                               MeterType metric, double dur, double groupTotal,
                               DisplayOptions opts, float headerH, float rowH)
     {
-        if (!opts.ShowEncounterTotal) return;
+        if (!WantsTotalRow(opts)) return;
 
         float y = 0f;
 
