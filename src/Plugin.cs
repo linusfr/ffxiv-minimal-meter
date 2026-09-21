@@ -89,7 +89,12 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     // ── Commands ──────────────────────────────────────────────────────────────
-    private void OnMainCommand(string cmd, string args)     => _mainWindow.IsVisible     = !_mainWindow.IsVisible;
+    private void OnMainCommand(string cmd, string args)
+    {
+        _mainWindow.IsVisible = !_mainWindow.IsVisible;
+        Config.MeterVisible   = _mainWindow.IsVisible;
+        SaveConfig();
+    }
     private void OnHistoryCommand(string cmd, string args)  => _historyWindow.IsVisible  = !_historyWindow.IsVisible;
     private void OnSettingsCommand(string cmd, string args) => _settingsWindow.IsVisible = !_settingsWindow.IsVisible;
 

@@ -8,8 +8,8 @@
 
 Most FFXIV meters want to be a dashboard: panels, gradients, title bars, a strip
 along the top reminding you this is a damage meter. Minimal Meter is the same
-parser with the furniture taken out. In **Transparent** style there is no window,
-no border, no striping — just a bar per player over the game.
+parser with the furniture taken out: no title bar, no toolbar, no window chrome
+— just a bar per player over the game, on a scrim as light as you like.
 
 ```
  1  SAM  Kaito Mizuhara            12.4k  31%
@@ -26,9 +26,10 @@ No ACT. No IINACT required. No browser overlay. One plugin.
 Sansflaire wrote the hard parts — the ActionEffect hook, the bit-level effect
 decoding, the DoT simulator, the Skia render pipeline. Go star their repo.
 
-Added here: the Transparent style, DoT/HoT attribution for other players, IINACT
-as an optional source, optional DPS/HPS/healing figures, grow-upward sizing, and
-a pass over some inherited crashes and races.
+Added here: the chrome-free single style, DoT/HoT attribution for other players,
+IINACT as an optional source, optional per-metric columns, click-to-sort, grow
+direction, auto-hide by context, alliance grouping, and a pass over some
+inherited crashes and races.
 
 ## Install
 
@@ -42,6 +43,26 @@ https://raw.githubusercontent.com/linusfr/ffxiv-minimal-meter/main/pluginmaster.
 ```
 
 Then `/xlplugins` → search **Minimal Meter** → Install.
+
+### Optional: IINACT, for other players' damage over time
+
+Minimal Meter parses on its own, but DoT and HoT ticks from *other* players are
+the one thing the game hooks cannot see (see [How it works](#how-it-works)).
+IINACT reads the packet stream and fills that gap. If it is installed, Minimal
+Meter finds it over IPC and uses it automatically — nothing to configure.
+
+Same procedure as above, in `/xlsettings` → **Experimental** → Custom Plugin
+Repositories:
+
+```
+https://raw.githubusercontent.com/marzent/IINACT/main/repo.json
+```
+
+Paste it, click `+`, click the **save** icon, then `/xlplugins` → search
+**IINACT** → Install.
+
+You do **not** need Browsingway or any overlay skin — Minimal Meter draws itself.
+IINACT is only a data source here.
 
 ### Direct download
 
@@ -69,7 +90,7 @@ Extract into `~/.xlcore/devPlugins/MinimalMeter/` (Linux) or
 
 ### Commands
 
-`/dmeter` toggles the meter · `/dmhistory` past sessions · `/dmsettings` settings
+`/dm` toggles the meter · `/dmhistory` past sessions · `/dmsettings` settings
 
 ## How it works
 
@@ -94,15 +115,27 @@ players' need one of:
 
 ## Display
 
-All under settings → **Window**.
+All in settings, reachable from `/dmsettings` or Dalamud's plugin menu.
 
-- **Grow upward** — bottom edge pinned, rows appear above it. **Max rows** caps
-  growth at 8 (a full party) by default; alliance raids scroll past that
-- **Extra row figures** — optional DPS, HPS and total healing. Healing renders in
-  green and only for combatants who healed
-- **Transparent** — bar opacity and text shadow; the shadow is what keeps names
-  readable over a bright AoE
-- Sorting follows the metric in the toolbar dropdown
+**Columns** (Window → Extra row figures) — total damage, DPS, healing, HPS,
+overhealing, damage taken, avoidable damage taken. Each owns a fixed slot and a
+fixed colour; healing figures render in green and only for combatants who
+actually healed. Click any figure in the **total row** to sort by it.
+
+**Sizing** (Window → Sizing) — one `Size (%)` dial scales rows, text, the job
+icon and padding together. **Grow direction** pins either the bottom edge (rows
+appear above) or the top, and **Max rows** caps growth before it scrolls.
+
+**Appearance** (Display) — background opacity, bar opacity, text outline and its
+strength. The defaults mimic the game's chat window: a half-opacity scrim with
+an outline, readable over both a dark dungeon and a bright floor AoE.
+
+**Auto-hide** (Window) — choose whether the meter shows in instances, PvP and
+the open world, and optionally hide it once combat ends. Placement preview
+overrides all of it.
+
+**Preview** — fills the meter with a synthetic party so you can position and
+size it without being in content.
 
 ## Development
 

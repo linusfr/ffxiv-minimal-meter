@@ -59,9 +59,10 @@ So on the built-in source:
 | Other players, DoT/HoT ticks | **absent** | exact | exact |
 
 "Tick attribution" is the ActorControl hook described in
-[`DOT_ATTRIBUTION.md`](DOT_ATTRIBUTION.md) — experimental, off by default until
-its packet layout is verified in game. Until then the middle column is a promise
-and the right-hand one is proven.
+[`DOT_ATTRIBUTION.md`](DOT_ATTRIBUTION.md). It is on by default: the packet
+carries its own source actor, and the healing path is verified against live
+captures. The damage path shares the category and is believed identical but has
+not been observed directly, so IINACT remains the fully proven route.
 
 A Bard, Black Mage or Summoner in your party reads low by roughly their DoT
 share of total output. Your own number is right either way, but comparisons
@@ -98,7 +99,8 @@ Being honest about what you give up:
   path — the numbers are better, the drill-down is worse.
 - **Names, not entity IDs.** `CombatData` identifies combatants by name, so the
   source hashes names into synthetic keys. Two characters with the same name on
-  different worlds collide, and the `@World` suffix is unavailable.
+  different worlds collide, and the `@World` suffix is unavailable. (Confirmed
+  against a live payload: the local player arrives as the literal key `YOU`.)
 - **No party/alliance distinction.** The payload does not separate party from
   alliance from bystander, so group headers collapse to a single list. The hook
   path groups as Party / Friendly / Enemies, where "Friendly" is alliance members

@@ -42,7 +42,7 @@ public sealed class HistoryWindow : IDisposable
         if (!IsVisible) return;
 
         ImGui.SetNextWindowSize(new Vector2(440, 400), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowBgAlpha(Config.Opacity);
+        ImGui.SetNextWindowBgAlpha(0.95f);
 
         if (!ImGui.Begin("Minimal Meter — History###MinimalMeterHistory", ref _isVisible))
         {

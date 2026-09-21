@@ -40,6 +40,7 @@ public sealed class IinactSource : IDisposable
     private Task?          _worker;
     private ClientWebSocket? _socket;
     private bool           _disposed;
+    private bool           _sawData;
 
     /// IINACT is installed and answered an IPC call.
     public bool Available { get; private set; }
@@ -125,7 +126,18 @@ public sealed class IinactSource : IDisposable
         {
             if (!_pi.GetIpcSubscriber<bool>(IpcServerRunning).InvokeFunc())
                 return null;
-            return _pi.GetIpcSubscriber<Uri?>(IpcServerUri).InvokeFunc();
+
+            var baseUri = _pi.GetIpcSubscriber<Uri?>(IpcServerUri).InvokeFunc();
+            if (baseUri == null) return null;
+
+            // IINACT reports the server's BASE uri (ws://127.0.0.1:10501/). The
+            // OverlayPlugin event endpoint is /ws — connecting to the base path
+            // succeeds but silently delivers nothing, which looks exactly like a
+            // working connection that never produces data.
+            if (string.IsNullOrEmpty(baseUri.AbsolutePath) || baseUri.AbsolutePath == "/")
+                return new Uri(baseUri, "ws");
+
+            return baseUri;
         }
         catch (Exception)
         {
@@ -166,6 +178,7 @@ public sealed class IinactSource : IDisposable
         }
 
         Connected = false;
+        _sawData  = false;
         Status    = "disconnected";
     }
 
@@ -176,6 +189,13 @@ public sealed class IinactSource : IDisposable
             var root = JObject.Parse(payload);
             if ((string?)root["type"] != "CombatData") return;
             Snapshot = Translate(root);
+
+            if (!_sawData)
+            {
+                _sawData = true;
+                _log.Info($"MinimalMeter: first CombatData received "
+                          + $"({Snapshot.Combatants.Count} combatants)");
+            }
         }
         catch (Exception ex)
         {
@@ -198,7 +218,11 @@ public sealed class IinactSource : IDisposable
         var session = new CombatSession
         {
             Id        = "iinact",
-            ZoneName  = (string?)encounter?["zoneName"] ?? "Unknown Zone",
+            // OverlayPlugin calls this CurrentZoneName; "zoneName" is kept as a
+            // fallback in case an older build of IINACT emits it instead.
+            ZoneName  = (string?)encounter?["CurrentZoneName"]
+                        ?? (string?)encounter?["zoneName"]
+                        ?? "Unknown Zone",
             StartTime = DateTime.UtcNow.AddSeconds(-durationSeconds),
             EndTime   = isActive ? null : DateTime.UtcNow,
         };

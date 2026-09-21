@@ -21,9 +21,6 @@ namespace MinimalMeter.Windows;
 public sealed class MeterCanvas : IDisposable
 {
     // ── Section heights ───────────────────────────────────────────────────────
-    public  const float TitleBarH  = 28f;  // exposed: "DAMAGE METER" title strip
-    private const float EncounterH = 64f;  // encounter info — centered single line
-    public  const float HeaderH    = TitleBarH + EncounterH; // 92px total header
     private const float DividerH   =  1f;
     public  const float GroupH     = 30f;  // per-group title row
     public  const float RowH       = 66f;  // per-combatant row (Modern/Classic)
@@ -64,19 +61,32 @@ public sealed class MeterCanvas : IDisposable
     private const float FtName   = 13f;
     private const float FtValue  = 16f;
 
+    private static SKColor TitleBg     = new(0x0E, 0x0E, 0x10, 0xFF);
+    private static SKColor TitleGrad1   = new(0x20, 0x20, 0x24, 0xFF);
+    private static SKColor TitleGrad2   = new(0x17, 0x17, 0x1A, 0xFF);
+    private static SKColor TitleAccent1 = new(0x6A, 0x72, 0x84, 0xFF);
+    private static SKColor TitleAccent2 = new(0x4A, 0x50, 0x5E, 0xFF);
+    private static SKColor TitleBorder  = new(0x2C, 0x2C, 0x32, 0xFF);
+    private static SKColor Divider      = new(0x2C, 0x2C, 0x32, 0xFF);
+    private static SKColor EncounterBg  = new(0x12, 0x12, 0x15, 0xFF);
+    private static SKColor GroupSep     = new(0x26, 0x26, 0x2A, 0xFF);
+    private static SKColor RowEven = new(0x1C, 0x1C, 0x1E, 0xFF);
+    private static SKColor RowOdd  = new(0x16, 0x16, 0x18, 0xFF);
+    private static SKColor RowSep  = new(0x26, 0x26, 0x2A, 0xFF);
+
     // ── Color palette — metallic rose-grey scheme ─────────────────────────────
     // Background layers
-    private static readonly SKColor BgDeep    = new(0x10, 0x0C, 0x0D, 0xFF);  // near-black warm charcoal
-    private static readonly SKColor BgGroup   = new(0x1C, 0x16, 0x17, 0xFF);  // group header strip
-    private static readonly SKColor BgHeader1 = new(0x1A, 0x14, 0x15, 0xFF);  // encounter grad top
-    private static readonly SKColor BgHeader2 = new(0x13, 0x0F, 0x10, 0xFF);  // encounter grad bottom
+    private static SKColor BgDeep    = new(0x10, 0x0C, 0x0D, 0xFF);  // near-black warm charcoal
+    private static SKColor BgGroup   = new(0x1C, 0x16, 0x17, 0xFF);  // group header strip
+    private static SKColor BgHeader1 = new(0x1A, 0x14, 0x15, 0xFF);  // encounter grad top
+    private static SKColor BgHeader2 = new(0x13, 0x0F, 0x10, 0xFF);  // encounter grad bottom
 
     // Metallic card layers (replaces BgEven/BgOdd with a gradient system)
-    private static readonly SKColor MetalBase   = new(0x2A, 0x1E, 0x20, 0xFF);  // dark rose-pewter base
-    private static readonly SKColor MetalWarm   = new(0xB4, 0x68, 0x38, 0xA8);  // copper-orange (left radial)
-    private static readonly SKColor MetalCool   = new(0x08, 0x05, 0x06, 0xA0);  // dark right edge (lighter → darker)
-    private static readonly SKColor MetalSpec   = new(0x0C, 0x08, 0x09, 0xFF);  // top edge dark vignette
-    private static readonly SKColor MetalGlow   = new(0xA0, 0x58, 0x50, 0xFF);  // bloom tint (fixed rose)
+    private static SKColor MetalBase   = new(0x2A, 0x1E, 0x20, 0xFF);  // dark rose-pewter base
+    private static SKColor MetalWarm   = new(0xB4, 0x68, 0x38, 0xA8);  // copper-orange (left radial)
+    private static SKColor MetalCool   = new(0x08, 0x05, 0x06, 0xA0);  // dark right edge (lighter → darker)
+    private static SKColor MetalSpec   = new(0x0C, 0x08, 0x09, 0xFF);  // top edge dark vignette
+    private static SKColor MetalGlow   = new(0xA0, 0x58, 0x50, 0xFF);  // bloom tint (fixed rose)
 
     // Text — warm neutral instead of blue-tinted
     private static readonly SKColor TextPrim   = new(0xF2, 0xEB, 0xEC, 0xFF);  // warm white
@@ -107,6 +117,12 @@ public sealed class MeterCanvas : IDisposable
     // Healing figures sit next to damage ones; colour is what separates them at
     // a glance, since both are just numbers.
     private static readonly SKColor HealTint    = new(0x6C, 0xD8, 0x7A, 0xFF);
+    // Incoming and wasted quantities read as a separate family from output.
+    private static readonly SKColor TakenTint   = new(0xE0, 0x7A, 0x5A, 0xFF);
+    private static readonly SKColor AvoidTint   = new(0xE8, 0xB4, 0x4C, 0xFF);
+    // Teal, matching its bar colour. It was a dim green, which next to the
+    // healing green read as the same quantity twice.
+    private static readonly SKColor OverhealTint = new(0x28, 0xB0, 0xA0, 0xFF);
 
     // ── Display options ───────────────────────────────────────────────────────
     public struct DisplayOptions
@@ -116,42 +132,65 @@ public sealed class MeterCanvas : IDisposable
         public bool ShowJobIcon;
         public bool ShowPercentage;
         public uint BarColorAbgr;
-        public WindowStyle Style;
         public bool  ShowEncounterTotal;
         public bool  ShowGroupHeaders;
-        public bool  ShowTitleBar;
         public float ScrollbarW; // reserved right margin when scrollbar is visible (px)
-        public bool  TextShadow;
-        public float BarAlpha;       // 0..1, Transparent style bar fill opacity
-        public bool  ShowFullValues;    // draw the raw number next to each bar
-        public float RowHeight;         // compact-style row height in px
+        public bool  TextShadow;      // draw an outline behind glyphs
+        public float OutlineStrength; // multiplier on the outline width
+        public float BarAlpha;
+        public float PanelAlpha;     // 0..1, panel/striping/separator opacity
+        public bool  AbbreviateValues;  // 12.4k rather than 12,431
+        public MeterType Style_Metric;  // the primary column's metric
+        public bool  ShowDamageValue;   // total damage, alongside the value
         public bool  ShowDps;           // damage per second, alongside the value
         public bool  ShowHealingValue;  // total healing, where nonzero
         public bool  ShowHps;           // healing per second, where nonzero
+        public float UiScale;      // single size dial: rows, glyphs, icon, padding
+        public bool  ShowDamageTaken;
+        public bool  ShowAvoidable;
+        public bool  ShowOverhealing;
+        public JobDisplay JobColumn;
     }
+
+    /// Clamped scale factor; 0 from an un-migrated config reads as 1.
+    /// Apply the configured panel opacity to a chrome colour.
+    private static SKColor Panel(SKColor c, DisplayOptions o)
+    {
+        float a = Math.Clamp(o.PanelAlpha < 0f ? 1f : o.PanelAlpha, 0f, 1f);
+        return c.WithAlpha((byte)Math.Clamp(c.Alpha * a, 0f, 255f));
+    }
+
+    /// Whether a figure column is drawn: because it is switched on, or because
+    /// it is the metric being sorted by. There is no separate "primary" column —
+    /// sorting must not move a number to a different slot or recolour it, so
+    /// every metric has one fixed position and one fixed colour, always.
+    private static bool Col(DisplayOptions o, bool enabled, MeterType m)
+        => enabled || o.Style_Metric == m;
+
+    private static float Scale(DisplayOptions o)
+        => Math.Clamp(o.UiScale <= 0f ? 1f : o.UiScale, 0.5f, 2.5f);
 
     /// Row height for the current style. Compact styles honour the configured
     /// value; the card layouts need their fixed height to fit the card.
-    public static float EffectiveRowH(DisplayOptions opts)
-        => opts.Style.IsCompact()
-            ? Math.Clamp(opts.RowHeight > 0 ? opts.RowHeight : MinRowH, 16f, 40f)
-            : RowH;
-
-    /// Transparent drops every chrome element that only exists to frame a panel.
-    /// Applied in one place so layout maths and rendering cannot disagree.
-    public static DisplayOptions Normalize(DisplayOptions o)
+    /// Vertical space the group headers and the gaps between groups consume, so
+    /// the window's growth cap can budget for them. Counting one header (the old
+    /// behaviour) made the meter scroll as soon as there was more than one group
+    /// — which is exactly what splitting by alliance produces.
+    public static float GroupOverhead(int groupCount, bool showHeaders)
     {
-        if (o.Style.IsTransparent())
-        {
-            o.ShowTitleBar     = false;
-            o.ShowGroupHeaders = false;
-        }
-        return o;
+        if (groupCount <= 0) return 0f;
+        return (showHeaders ? groupCount * GroupH : 0f)
+             + Math.Max(0, groupCount - 1) * GroupGap;
     }
+
+    public static float EffectiveRowH(DisplayOptions opts) => MinRowH * Scale(opts);
+
 
     // ── Dynamic header height ─────────────────────────────────────────────────
     public static float GetEffectiveHeaderH(DisplayOptions opts)
-        => (opts.ShowTitleBar ? TitleBarH : 0f) + (opts.ShowEncounterTotal ? EncounterH : 0f);
+        // The encounter summary is one row styled like the combatant rows below
+        // it, not a 64px panel with a zone name, a timer and a title strip.
+        => opts.ShowEncounterTotal ? EffectiveRowH(opts) : 0f;
 
     // ── Group input ───────────────────────────────────────────────────────────
     public struct GroupData
@@ -161,7 +200,133 @@ public sealed class MeterCanvas : IDisposable
         public SKColor             Accent;
     }
 
-    private bool _shadow;
+    private float _outline;
+
+    // Figure columns are measured across ALL rows before drawing, then every row
+    // advances by the column width rather than by its own text width. Otherwise a
+    // row reading "12.4k" and one reading "980" push the next column to different
+    // x positions and nothing lines up vertically.
+    private float _colValW, _colPctW, _colDpsW, _colHpsW, _colHealW, _colRankW;
+    private float _colTakenW, _colAvoidW, _colOverhealW, _colJobW, _colDmgW;
+
+    /// Screen-space x ranges of the total row's figures, with the metric each
+    /// one represents. The window turns these into invisible buttons so clicking
+    /// a summed number sorts by it — the columns are already there, so they may
+    /// as well be the sort control.
+    public readonly List<(float X0, float X1, MeterType Metric)> TotalHits = new();
+
+    /// True only while the total row is being drawn.
+    private bool _recordingTotalHits;
+
+    /// Sum of everything on display — the total row's contents.
+    private static CombatantData BuildTotal(List<GroupData> groups)
+    {
+        var total = new CombatantData { Name = "Total", Type = CombatantType.Unknown };
+        foreach (var g in groups)
+        {
+            foreach (var c in g.Combatants)
+            {
+                total.TotalDamageDealt         += c.TotalDamageDealt;
+                total.TotalHealingDone          += c.TotalHealingDone;
+                total.TotalOverhealingDone      += c.TotalOverhealingDone;
+                total.TotalDamageTaken          += c.TotalDamageTaken;
+                total.TotalAvoidableDamageTaken += c.TotalAvoidableDamageTaken;
+            }
+        }
+        return total;
+    }
+
+    private void MeasureColumns(List<GroupData> groups, MeterType metric,
+                                double dur, DisplayOptions opts)
+    {
+        _colValW = _colPctW = _colDpsW = _colHpsW = _colHealW = 0f;
+        _colTakenW = _colAvoidW = _colOverhealW = _colDmgW = 0f;
+
+        float sc = Scale(opts);
+        using var bold = Font(11f * sc, true);
+        using var reg  = Font(11f * sc, false);
+
+        // Rank is left-aligned, so its column must be wide enough for the largest
+        // number that will appear — otherwise every row's icon and name start at
+        // a different x.
+        // The job column is left-aligned like the rank, so it needs the widest
+        // abbreviation that will actually appear — an 18px icon slot is narrower
+        // than "WHM" at any reasonable scale, which pushed text into the names.
+        _colJobW = opts.JobColumn == JobDisplay.Text ? 0f : 18f * sc;
+        if (opts.JobColumn == JobDisplay.Text)
+        {
+            using var jobFont = Font(11f * sc, false);
+            foreach (var g in groups)
+                foreach (var c in g.Combatants)
+                {
+                    var abbr = Jobs.TryGetValue(c.ClassJobId, out var ji) ? ji.Abbr : "???";
+                    _colJobW = MathF.Max(_colJobW, jobFont.MeasureText(abbr));
+                }
+        }
+
+        int maxRank = 0;
+        foreach (var g in groups) maxRank = Math.Max(maxRank, g.Combatants.Count);
+        using (var rankFont = Font(11f * sc, true))
+            _colRankW = rankFont.MeasureText(Math.Max(maxRank, 1).ToString());
+
+        // Percent is bounded, so reserve its widest form rather than scanning.
+        if (opts.ShowPercentage) _colPctW = reg.MeasureText("100%");
+
+        // The total row shares these columns, and its numbers are sums — by
+        // definition the widest entry. Measuring only individual combatants left
+        // every column too narrow, so the totals ran into each other.
+        var measured = new List<CombatantData>();
+        foreach (var g in groups) measured.AddRange(g.Combatants);
+        if (opts.ShowEncounterTotal) measured.Add(BuildTotal(groups));
+
+        {
+            foreach (var c in measured)
+            {
+                {
+                    var t = FormatVal((long)c.GetValue(metric, dur), metric, opts);
+                    _colValW = MathF.Max(_colValW, bold.MeasureText(t));
+                }
+                if (Col(opts, opts.ShowDamageValue, MeterType.DamageDealt))
+                {
+                    var t = FormatVal(c.TotalDamageDealt, MeterType.DamageDealt, opts);
+                    _colDmgW = MathF.Max(_colDmgW, reg.MeasureText(t));
+                }
+                if (Col(opts, opts.ShowDps, MeterType.DPS))
+                {
+                    var t = FormatVal((long)c.GetDps(dur), MeterType.DPS, opts);
+                    _colDpsW = MathF.Max(_colDpsW, reg.MeasureText(t));
+                }
+                if (Col(opts, opts.ShowDamageTaken, MeterType.DamageTaken) && c.TotalDamageTaken > 0)
+                {
+                    var t = FormatVal(c.TotalDamageTaken, MeterType.DamageTaken, opts);
+                    _colTakenW = MathF.Max(_colTakenW, reg.MeasureText(t));
+                }
+                if (Col(opts, opts.ShowAvoidable, MeterType.AvoidableDamageTaken) && c.TotalAvoidableDamageTaken > 0)
+                {
+                    var t = FormatVal(c.TotalAvoidableDamageTaken, MeterType.AvoidableDamageTaken, opts);
+                    _colAvoidW = MathF.Max(_colAvoidW, reg.MeasureText(t));
+                }
+                if (Col(opts, opts.ShowOverhealing, MeterType.Overhealing) && c.TotalOverhealingDone > 0)
+                {
+                    var t = FormatVal(c.TotalOverhealingDone, MeterType.Overhealing, opts);
+                    _colOverhealW = MathF.Max(_colOverhealW, reg.MeasureText(t));
+                }
+
+                if (c.TotalHealingDone <= 0) continue;
+                if (Col(opts, opts.ShowHps, MeterType.HPS))
+                {
+                    var t = FormatVal((long)c.GetHps(dur), MeterType.HPS, opts);
+                    _colHpsW = MathF.Max(_colHpsW, reg.MeasureText(t));
+                }
+                if (Col(opts, opts.ShowHealingValue, MeterType.HealingDone))
+                {
+                    var t = FormatVal(c.TotalHealingDone, MeterType.HealingDone, opts);
+                    _colHealW = MathF.Max(_colHealW, reg.MeasureText(t));
+                }
+            }
+        }
+    }
+
 
     // ── Rendering infrastructure ──────────────────────────────────────────────
     private RenderSurface?  _surface;
@@ -185,9 +350,6 @@ public sealed class MeterCanvas : IDisposable
     private DateTime _lastRenderTick = DateTime.UtcNow;
     private float    _animTime       = 0f;
 
-    // Shake — triggered when a combatant's rank changes
-    private readonly Dictionary<uint, int>   _prevRanks   = new();
-    private readonly Dictionary<uint, float> _shakeTimers = new();
 
     // Slide-in — triggered when a new combatant first appears
     private readonly HashSet<uint>           _seenEntities  = new();
@@ -239,12 +401,6 @@ public sealed class MeterCanvas : IDisposable
             if (_slideProgress[id] >= 1f) _slideProgress.Remove(id);
         }
 
-        // ── Advance shake timers ──────────────────────────────────────────────
-        foreach (var id in _shakeTimers.Keys.ToList())
-        {
-            _shakeTimers[id] = Math.Max(0f, _shakeTimers[id] - dt);
-            if (_shakeTimers[id] == 0f) _shakeTimers.Remove(id);
-        }
 
         // ── Initialize & animate accordion groups ─────────────────────────────
         foreach (var g in groups)
@@ -261,19 +417,6 @@ public sealed class MeterCanvas : IDisposable
             float delta   = target - current;
             if (MathF.Abs(delta) < 0.001f) { _groupExpandT[label] = target; continue; }
             _groupExpandT[label] = current + delta * Math.Min(1f, AccordionSpeed * dt);
-        }
-
-        // ── Compute & pre-detect rank changes ────────────────────────────────
-        var currentRanks = new Dictionary<uint, int>();
-        foreach (var g in groups)
-            for (int i = 0; i < g.Combatants.Count; i++)
-                currentRanks[g.Combatants[i].EntityId] = i + 1;
-
-        foreach (var (id, newRank) in currentRanks)
-        {
-            if (_prevRanks.TryGetValue(id, out int prev) && prev != newRank)
-                _shakeTimers[id] = 0.45f; // trigger shake
-            _prevRanks[id] = newRank;
         }
 
         _hitRows.Clear();
@@ -297,10 +440,11 @@ public sealed class MeterCanvas : IDisposable
         }
 
         var canvas = _surface.Canvas;
-        _shadow = opts.TextShadow;
+        _outline = opts.TextShadow ? Math.Clamp(opts.OutlineStrength <= 0f ? 1f : opts.OutlineStrength, 0.25f, 2f) : 0f;
+        MeasureColumns(groups, metric, dur, opts);
         // The surface is Premul RGBA and reads back Unpremul, so a transparent
         // clear survives the upload and ImGui blends it over the game.
-        canvas.Clear(opts.Style.IsTransparent() ? SKColors.Transparent : BgDeep);
+        canvas.Clear(Panel(BgDeep, opts));
 
         // Compute group total for encounter header
         double groupTotal = 0;
@@ -308,7 +452,7 @@ public sealed class MeterCanvas : IDisposable
             foreach (var c in g.Combatants)
                 groupTotal += c.GetValue(metric, dur);
 
-        DrawEncounterHeader(canvas, session, w, metric, dur, isPinned, groupTotal, opts, effectiveHeaderH);
+        DrawTotalRow(canvas, groups, w, metric, dur, groupTotal, opts, effectiveHeaderH, rowH);
         float y = effectiveHeaderH + DividerH;
 
         bool firstGroup = true;
@@ -347,7 +491,7 @@ public sealed class MeterCanvas : IDisposable
                     var val = c.GetValue(metric, dur);
                     var pct = topVal > 0 ? val / topVal : 0.0;
 
-                    DrawRow(canvas, c, i + 1, i, group.Accent, w, rowY, val, pct, metric, dur, localEntityId, opts, dt, rowH);
+                    DrawRowMinimal(canvas, c, i + 1, i, w, rowY, rowH, val, pct, metric, dur, opts, BarColor(opts));
                     _hitRows.Add((rowY, rowH, c));
                     rowY += rowH;
                 }
@@ -416,130 +560,50 @@ public sealed class MeterCanvas : IDisposable
         return h;
     }
 
-    // ── Encounter header ──────────────────────────────────────────────────────
-    private void DrawEncounterHeader(SKCanvas canvas, CombatSession? session, int w, MeterType metric,
-                                     double dur, bool isPinned, double groupTotal, DisplayOptions opts,
-                                     float effectiveHeaderH)
+    /// <summary>
+    /// The encounter summary, drawn as one row matching the combatant rows: same
+    /// columns, same alignment, combined totals. Replaces the old zone/timer/
+    /// total panel, which was a different shape from everything under it.
+    /// </summary>
+    private void DrawTotalRow(SKCanvas canvas, List<GroupData> groups, int w,
+                              MeterType metric, double dur, double groupTotal,
+                              DisplayOptions opts, float headerH, float rowH)
     {
-        bool isMinimal    = opts.Style.IsCompact();
-        bool showTitleBar = opts.ShowTitleBar;
+        if (!opts.ShowEncounterTotal) return;
 
-        if (showTitleBar)
+        float y = 0f;
+
+        var total = BuildTotal(groups);
+        TotalHits.Clear();
+        _recordingTotalHits = true;
+
         {
-            // Title bar — dark warm metallic
-            if (isMinimal)
-            {
-                _p.Color = new SKColor(0x0E, 0x0A, 0x0B, 0xFF);
-                canvas.DrawRect(SKRect.Create(0, 0, w, TitleBarH), _p);
-            }
-            else
-            {
-                _p.Shader = SKShader.CreateLinearGradient(
-                    new SKPoint(0, 0), new SKPoint(w, 0),
-                    new[] { new SKColor(0x22, 0x18, 0x1A, 0xFF), new SKColor(0x18, 0x14, 0x16, 0xFF) },
-                    SKShaderTileMode.Clamp);
-                canvas.DrawRect(SKRect.Create(0, 0, w, TitleBarH), _p);
-                _p.Shader = null;
-            }
-
-            // Top-edge specular stripe
-            if (!isMinimal)
-            {
-                _p.Shader = SKShader.CreateLinearGradient(
-                    new SKPoint(0, 0), new SKPoint(w, 0),
-                    new[] { new SKColor(0xC8, 0x78, 0x60, 0xFF), new SKColor(0xA0, 0x70, 0x78, 0xFF) },
-                    SKShaderTileMode.Clamp);
-                canvas.DrawRect(SKRect.Create(0, 0, w, 2f), _p);
-                _p.Shader = null;
-            }
-
-            float titleMidY = TitleBarH * 0.5f + 1f;
-            if (!isMinimal)
-                Draw(canvas, "DAMAGE METER", w * 0.5f, titleMidY, 11f, true, new SKColor(0xD8, 0xC4, 0xC6, 0xCC), Align.Center);
-            if (isPinned)
-                Draw(canvas, "PINNED", w - 6f, titleMidY, FtSub, true, new SKColor(0xFF, 0xCC, 0x44, 0xFF), Align.Right);
-
-            // Bottom border of title bar
-            _p.Color = new SKColor(0x38, 0x28, 0x2A, 0xFF);
-            canvas.DrawRect(SKRect.Create(0, TitleBarH - 1f, w, 1f), _p);
+            _p.Color = Panel(EncounterBg, opts);
+            canvas.DrawRect(SKRect.Create(0, y, w, rowH), _p);
         }
 
-        // Bottom divider (drawn after title bar, before rows)
-        if (!opts.Style.IsTransparent())
-        {
-            _p.Color = new SKColor(0x3A, 0x28, 0x2A, 0xFF);
-            canvas.DrawRect(SKRect.Create(0, effectiveHeaderH, w, DividerH), _p);
-        }
-
-        if (!opts.ShowEncounterTotal) return; // encounter area fully collapsed
-
-        // Encounter area starts after title bar (or at 0 if title bar hidden)
-        float encY = showTitleBar ? TitleBarH : 0f;
-        if (opts.Style.IsTransparent())
-        {
-            // no panel behind the encounter line — text only
-        }
-        else if (isMinimal)
-        {
-            _p.Color = new SKColor(0x12, 0x0E, 0x0F, 0xFF);
-            canvas.DrawRect(SKRect.Create(0, encY, w, EncounterH), _p);
-        }
-        else
-        {
-            _p.Shader = SKShader.CreateLinearGradient(
-                new SKPoint(0, encY), new SKPoint(0, encY + EncounterH),
-                new[] { BgHeader1, BgHeader2 },
-                SKShaderTileMode.Clamp);
-            canvas.DrawRect(SKRect.Create(0, encY, w, EncounterH), _p);
-            _p.Shader = null;
-        }
-
-        if (session == null)
-        {
-            Draw(canvas, "Waiting for combat…", w / 2f, encY + EncounterH * 0.65f, FtMain, false, TextMuted, Align.Center);
-            return;
-        }
-
-        float cx   = w * 0.5f;
-        float midY = encY + EncounterH * 0.65f;
-
-        string statusDot = session.IsActive ? "● " : "■ ";
-        SKColor dotCol   = session.IsActive ? TextLive : TextEnded;
-        float subY       = encY + EncounterH * 0.30f;
-        Draw(canvas, statusDot,        cx - 4f, subY, 9f,    false, dotCol,    Align.Right);
-        Draw(canvas, session.ZoneName, cx,      subY, FtZone, false, TextMuted, Align.Left);
-
-        string metricLabel = $"Total {metric.DisplayName()}:";
-        string bigVal      = groupTotal > 0 ? FormatVal((long)groupTotal, metric) : "—";
-        string timerStr    = $"  ({session.FormattedDuration})";
-
-        using var fontMain = Font(FtMain, false);
-        using var fontBig  = Font(FtTimer, true);
-        using var fontSub2 = Font(FtMain, false);
-        float labelW     = fontMain.MeasureText(metricLabel + " ");
-        float valW2      = fontBig.MeasureText(bigVal);
-        float timerW     = fontSub2.MeasureText(timerStr);
-        float totalLineW = labelW + valW2 + timerW;
-        float startX     = cx - totalLineW * 0.5f;
-
-        Draw(canvas, metricLabel + " ", startX + labelW * 0.5f,                   midY + 6f, FtMain,  false, TextMuted, Align.Center);
-        Draw(canvas, bigVal,            startX + labelW + valW2 * 0.5f,           midY + 6f, FtTimer, true,  TextTimer, Align.Center);
-        Draw(canvas, timerStr,          startX + labelW + valW2 + timerW * 0.5f,  midY + 6f, FtMain,  false, TextMuted, Align.Center);
+        // rank 0 suppresses the rank glyph and the job icon; pct 1 fills the bar,
+        // since the total is by definition the maximum.
+        DrawRowMinimal(canvas, total, 0, 0, w, y, rowH,
+                       total.GetValue(metric, dur), 1.0, metric, dur, opts, TextMuted);
+        _recordingTotalHits = false;
     }
+
+    // ── Encounter header ──────────────────────────────────────────────────────
 
     // ── Group header row ──────────────────────────────────────────────────────
     private void DrawGroupHeader(SKCanvas canvas, GroupData group, int w, float y,
                                   double topVal, MeterType metric, double dur, DisplayOptions opts,
                                   bool collapsed, float expandT)
     {
-        bool isMinimal = opts.Style.IsCompact();
+        bool isMinimal = true;
 
         if (isMinimal)
         {
-            _p.Color = new SKColor(0x14, 0x10, 0x11, 0xFF);
+            _p.Color = Panel(BgGroup, opts);
             canvas.DrawRect(SKRect.Create(0, y, w, GroupH), _p);
             // Bottom separator
-            _p.Color = new SKColor(0x28, 0x20, 0x22, 0xFF);
+            _p.Color = Panel(GroupSep, opts);
             canvas.DrawRect(SKRect.Create(0, y + GroupH - 1f, w, 1f), _p);
         }
         else
@@ -566,266 +630,72 @@ public sealed class MeterCanvas : IDisposable
         Draw(canvas, group.Label,                     LeftPad + 14f,             midY, FtMain, true,  TextPrim,  Align.Left);
         Draw(canvas, $"  ({group.Combatants.Count})", LeftPad + 14f + labelW2,   midY, FtSub,  false, TextMuted, Align.Left);
 
-        // Top value — respects scrollbar margin
+        // Group sums, in the same columns as the rows below and the total row
+        // above — a header that showed only the group's single highest value made
+        // the three levels disagree about what a column means.
         float effW = w - opts.ScrollbarW;
-        if (topVal > 0)
-            Draw(canvas, FormatVal((long)topVal, metric), effW - RightPad, midY, FtSub, false, TextMuted, Align.Right);
+        float sc   = Scale(opts);
+
+        var sum = new CombatantData();
+        foreach (var c in group.Combatants)
+        {
+            sum.TotalDamageDealt         += c.TotalDamageDealt;
+            sum.TotalHealingDone          += c.TotalHealingDone;
+            sum.TotalOverhealingDone      += c.TotalOverhealingDone;
+            sum.TotalDamageTaken          += c.TotalDamageTaken;
+            sum.TotalAvoidableDamageTaken += c.TotalAvoidableDamageTaken;
+        }
+
+        float rx = effW - RightPad;
+        if (opts.ShowPercentage) rx -= _colPctW + 6f;   // keep the column reserved
+
+        if (Col(opts, opts.ShowDamageValue, MeterType.DamageDealt))
+            rx = DrawFigure(canvas, FormatVal(sum.TotalDamageDealt, MeterType.DamageDealt, opts),
+                            rx, midY, TextPrim, _colDmgW, sc);
+        if (Col(opts, opts.ShowDps, MeterType.DPS))
+            rx = DrawFigure(canvas, FormatVal((long)sum.GetDps(dur), MeterType.DPS, opts),
+                            rx, midY, TextMuted, _colDpsW, sc);
+        bool healed = sum.TotalHealingDone > 0;
+        if (Col(opts, opts.ShowHps, MeterType.HPS))
+            rx = DrawFigure(canvas, healed ? FormatVal((long)sum.GetHps(dur), MeterType.HPS, opts) : "",
+                            rx, midY, HealTint, _colHpsW, sc);
+        if (Col(opts, opts.ShowHealingValue, MeterType.HealingDone))
+            rx = DrawFigure(canvas, healed ? FormatVal(sum.TotalHealingDone, MeterType.HealingDone, opts) : "",
+                            rx, midY, HealTint, _colHealW, sc);
+        if (Col(opts, opts.ShowOverhealing, MeterType.Overhealing))
+            rx = DrawFigure(canvas, sum.TotalOverhealingDone > 0
+                                ? FormatVal(sum.TotalOverhealingDone, MeterType.Overhealing, opts) : "",
+                            rx, midY, OverhealTint, _colOverhealW, sc);
+        if (Col(opts, opts.ShowDamageTaken, MeterType.DamageTaken))
+            rx = DrawFigure(canvas, sum.TotalDamageTaken > 0
+                                ? FormatVal(sum.TotalDamageTaken, MeterType.DamageTaken, opts) : "",
+                            rx, midY, TakenTint, _colTakenW, sc);
+        if (Col(opts, opts.ShowAvoidable, MeterType.AvoidableDamageTaken))
+            rx = DrawFigure(canvas, sum.TotalAvoidableDamageTaken > 0
+                                ? FormatVal(sum.TotalAvoidableDamageTaken, MeterType.AvoidableDamageTaken, opts) : "",
+                            rx, midY, AvoidTint, _colAvoidW, sc);
     }
 
     // ── Combatant row (card style) ────────────────────────────────────────────
-    private void DrawRow(
-        SKCanvas canvas, CombatantData c, int rank, int rowIdx,
-        SKColor accent, int w, float y, double val, double pct, MeterType metric,
-        double dur, uint localEntityId, DisplayOptions opts, float dt, float rowH = RowH)
+    /// Bar fill colour for the current metric.
+    private static SKColor BarColor(DisplayOptions opts)
+        => new((byte)(opts.BarColorAbgr & 0xFF),
+               (byte)((opts.BarColorAbgr >> 8) & 0xFF),
+               (byte)((opts.BarColorAbgr >> 16) & 0xFF),
+               (byte)((opts.BarColorAbgr >> 24) & 0xFF));
+
+    /// Draw one right-aligned figure inside a fixed-width column and return the
+    /// new right edge. Width comes from MeasureColumns, not from this text, so
+    /// the column lines up across every row.
+    private float DrawFigure(SKCanvas canvas, string text, float rightX, float midY,
+                             SKColor col, float colW, float sc,
+                             MeterType? sortMetric = null)
     {
-        bool    isLocal  = localEntityId != 0 && c.EntityId == localEntityId;
-        SKColor barColor = EnsureBright(AbgrToSkColor(opts.BarColorAbgr));
-
-        // ── Card bounds — right edge reserves scrollbar space ─────────────────
-        float effW  = w - opts.ScrollbarW;
-        float cardX = CardMargin;
-        float cardY = y + CardMargin;
-        float cardW = effW - CardMargin * 2;
-        // CardH is const 60f
-
-        var cardRect = SKRect.Create(cardX, cardY, cardW, CardH);
-
-        // ── Shake offset ──────────────────────────────────────────────────────
-        float shakeX = 0f, shakeY = 0f;
-        if (_shakeTimers.TryGetValue(c.EntityId, out float shakeT) && shakeT > 0f)
-        {
-            float progress  = shakeT / 0.45f; // 1→0 over duration
-            float intensity = 4f * progress;
-            shakeX = MathF.Sin(_animTime * 53f + rank) * intensity;
-            shakeY = MathF.Sin(_animTime * 37f + rank * 1.7f) * intensity * 0.5f;
-        }
-
-        // ── Slide-in offset ───────────────────────────────────────────────────
-        float slideX = 0f;
-        if (_slideProgress.TryGetValue(c.EntityId, out float slideT))
-            slideX = (1f - EaseOutCubic(slideT)) * -cardW;
-
-        // ── Clip to row allocation, then apply transforms ─────────────────────
-        int rowSave = canvas.Save();
-        canvas.ClipRect(SKRect.Create(0, y, w, rowH));
-
-        bool hasTransform = shakeX != 0f || shakeY != 0f || slideX != 0f;
-        if (hasTransform)
-            canvas.Translate(shakeX + slideX, shakeY);
-
-        if (opts.Style.IsCompact())
-        {
-            DrawRowMinimal(canvas, c, rank, rowIdx, w, y, rowH, val, pct, metric, dur, opts, barColor);
-            canvas.RestoreToCount(rowSave);
-            return;
-        }
-
-        // ── Modern / Classic style ────────────────────────────────────────────
-
-        // ── 1. Card metallic base ─────────────────────────────────────────────
-        _p.Color  = MetalBase;
-        _p.Shader = null;
-        canvas.DrawRoundRect(cardRect, CardR, CardR, _p);
-
-        // ── 2. Horizontal metallic gradient (copper-warm left → silver-cool right)
-        _p.Shader = SKShader.CreateLinearGradient(
-            new SKPoint(cardX, 0), new SKPoint(cardX + cardW, 0),
-            new[] { MetalWarm, new SKColor(0, 0, 0, 0), MetalCool },
-            new[] { 0f, 0.42f, 1f },
-            SKShaderTileMode.Clamp);
-        canvas.DrawRoundRect(cardRect, CardR, CardR, _p);
-        _p.Shader = null;
-
-        // ── 2b. Top specular highlight strip ──────────────────────────────────
-        _p.Shader = SKShader.CreateLinearGradient(
-            new SKPoint(0, cardY), new SKPoint(0, cardY + CardH * 0.40f),
-            new[] { MetalSpec.WithAlpha(0x60), new SKColor(0, 0, 0, 0) },
-            SKShaderTileMode.Clamp);
-        canvas.DrawRoundRect(cardRect, CardR, CardR, _p);
-        _p.Shader = null;
-
-        // ── 2c. Rank tint overlay (gold/silver/bronze/grey) — party only ─────
-        if (c.Type == CombatantType.PartyMember)
-        {
-            SKColor rankTint = rank switch
-            {
-                1 => Gold.WithAlpha(0x40),
-                2 => Silver.WithAlpha(0x30),
-                3 => Bronze.WithAlpha(0x38),
-                _ => new SKColor(0x88, 0x80, 0x82, 0x18),
-            };
-            _p.Shader = SKShader.CreateLinearGradient(
-                new SKPoint(cardX, 0), new SKPoint(cardX + cardW * 0.55f, 0),
-                new[] { rankTint, new SKColor(0, 0, 0, 0) },
-                SKShaderTileMode.Clamp);
-            canvas.DrawRoundRect(cardRect, CardR, CardR, _p);
-            _p.Shader = null;
-        }
-
-        // ── 3. Dot matrix background (left 50%, fading to transparent) ────────
-        {
-            const float dotR    = 0.8f;
-            const float dotStep = 5f;
-            const byte  dotBase = 0x60;
-            float dotFadeEnd = cardX + cardW * 0.5f; // stop at 50% width
-            int dotSave = canvas.Save();
-            canvas.ClipRoundRect(new SKRoundRect(cardRect, CardR), SKClipOperation.Intersect, true);
-            for (float dy = cardY + dotStep; dy < cardY + CardH; dy += dotStep)
-            {
-                for (float dx = cardX + dotStep; dx < dotFadeEnd; dx += dotStep)
-                {
-                    float t     = (dx - cardX) / (dotFadeEnd - cardX); // 0 at left, 1 at fadeEnd
-                    byte  alpha = (byte)(dotBase * (1f - t));
-                    _p.Color = new SKColor(0x10, 0x08, 0x09, alpha);
-                    canvas.DrawCircle(dx, dy, dotR, _p);
-                }
-            }
-            canvas.RestoreToCount(dotSave);
-        }
-
-        // ── 4. Dark border stroke ─────────────────────────────────────────────
-        _p.Style       = SKPaintStyle.Stroke;
-        _p.StrokeWidth = 1.2f;
-        _p.Color       = new SKColor(0x08, 0x05, 0x06, 0xCC);
-        canvas.DrawRoundRect(cardRect, CardR, CardR, _p);
-        _p.Style = SKPaintStyle.Fill;
-
-        // ── 4. Bar layout ─────────────────────────────────────────────────────
-        float barX     = cardX + BarPadX;
-        float barMaxW  = cardW - BarPadX * 2;
-        float barY     = cardY + CardH - BarPadB - BarH;
-
-        // Fill bar (rounded, proportional — no ghost track)
-        if (pct > 0.001)
-        {
-            float barFillW = barMaxW * (float)pct;
-            var   barRect  = SKRect.Create(barX, barY, barFillW, BarH);
-
-            // Top-to-bottom gradient: lighter barColor → darker barColor
-            SKColor barLight = new(
-                (byte)Math.Min(255, barColor.Red   + (255 - barColor.Red)   * 0.22f),
-                (byte)Math.Min(255, barColor.Green + (255 - barColor.Green) * 0.22f),
-                (byte)Math.Min(255, barColor.Blue  + (255 - barColor.Blue)  * 0.22f),
-                0xFF);
-            SKColor barDark = new(
-                (byte)(barColor.Red   * 0.45f),
-                (byte)(barColor.Green * 0.45f),
-                (byte)(barColor.Blue  * 0.45f),
-                0xFF);
-            _p.Shader = SKShader.CreateLinearGradient(
-                new SKPoint(0, barY), new SKPoint(0, barY + BarH),
-                new[] { barLight, barDark },
-                SKShaderTileMode.Clamp);
-            canvas.DrawRoundRect(barRect, BarR, BarR, _p);
-            _p.Shader = null;
-
-            // Lighter bar color outline
-            _p.Style       = SKPaintStyle.Stroke;
-            _p.StrokeWidth = 0.8f;
-            _p.Color       = barLight.WithAlpha(0x70);
-            canvas.DrawRoundRect(barRect, BarR, BarR, _p);
-            _p.Style = SKPaintStyle.Fill;
-
-            // Breathing Pulse Glow (Panache technique) — lighter barColor → white
-            DrawBarPulseGlow(canvas, barRect, BarR, barColor, _animTime);
-        }
-
-        // ── 5. Rank number (top-left of card) ────────────────────────────────
-        float rankRightX = cardX + LeftPad + RankW;
-        float topMidY    = cardY + (CardH - BarPadB - BarH) * 0.5f;
-        SKColor rankCol  = rank == 1 ? Gold : rank == 2 ? Silver : rank == 3 ? Bronze : new SKColor(0xC4, 0xB8, 0xBA, 0xFF);
-        DrawShadow(canvas, rank.ToString(), rankRightX, topMidY, FtRank, true, align: Align.Right);
-        Draw(canvas, rank.ToString(), rankRightX, topMidY, FtRank, true, rankCol, Align.Right);
-
-        // ── 6. Job badge in rounded box ───────────────────────────────────────
-        float badgeStartX = rankRightX + 6f;
-        if (opts.ShowJobIcon)
-        {
-            float badgeX = badgeStartX;
-            float badgeY = cardY + (CardH - BarPadB - BarH - BadgeH) * 0.5f + 1f;
-            badgeY = Math.Max(cardY + 3f, badgeY);
-            var badgeRect = SKRect.Create(badgeX, badgeY, BadgeW, BadgeH);
-
-            // Drop shadow
-            var shadowRect = SKRect.Create(badgeX + 2f, badgeY + 2.5f, BadgeW, BadgeH);
-            using (var shadowPaint = new SKPaint {
-                IsAntialias = true,
-                Style       = SKPaintStyle.Fill,
-                Color       = new SKColor(0, 0, 0, 0x88),
-                ImageFilter = SKImageFilter.CreateBlur(2.5f, 2.5f),
-            })
-                canvas.DrawRoundRect(shadowRect, BadgeR, BadgeR, shadowPaint);
-
-            // Rounded box background (role color)
-            SKColor roleColor = GetRoleColor(c.ClassJobId);
-            _p.Color = new SKColor(roleColor.Red, roleColor.Green, roleColor.Blue, 0x70);
-            canvas.DrawRoundRect(badgeRect, BadgeR, BadgeR, _p);
-
-            // Icon or text
-            var icon = GetJobIcon(c.ClassJobId);
-            if (icon != null)
-            {
-                _p.Color = c.ClassJobId == 0
-                    ? new SKColor(0xFF, 0xCC, 0x55, 0xFF)  // gold tint for generic enemy
-                    : SKColors.White;
-                float iconShift = (c.ClassJobId == 0 || c.ClassJobId == 41) ? 0f : 2f;
-                float iconScale = c.ClassJobId == 0 ? 1.18f : 1f;
-                float iconW     = BadgeW * iconScale;
-                float iconH     = BadgeH * iconScale;
-                var iconRect = SKRect.Create(
-                    badgeX  + (BadgeW - iconW) * 0.5f,
-                    badgeY  + (BadgeH - iconH) * 0.5f + iconShift,
-                    iconW, iconH);
-                canvas.DrawImage(icon, iconRect, _p);
-            }
-            else
-            {
-                string abbr = Jobs.TryGetValue(c.ClassJobId, out var ji) ? ji.Abbr : "???";
-                Draw(canvas, abbr, badgeX + BadgeW * 0.5f, badgeY + BadgeH * 0.5f, 10f, true, SKColors.White, Align.Center);
-            }
-
-            badgeStartX = badgeX + BadgeW + 6f;
-        }
-
-        // ── 7. Name just above the bar ────────────────────────────────────────
-        string displayName = opts.ShowFullName ? c.Name : ToInitials(c.Name);
-        if (opts.ShowPlayerServer && !string.IsNullOrEmpty(c.World))
-            displayName += "@" + c.World;
-
-        float rightReserve = RightPad + ValW + (opts.ShowPercentage ? PctW + 4f : 0f);
-        float nameMaxW = cardX + cardW - rightReserve - badgeStartX - 4f;
-        float nameY    = topMidY; // centered vertically in space between card top and bar
-
-        DrawShadow(canvas, displayName, badgeStartX, nameY, FtName, rank == 1 || isLocal, nameMaxW);
-        Draw(canvas, displayName, badgeStartX, nameY, FtName,
-             rank == 1 || isLocal, isLocal ? LocalAccent : TextPrim, Align.Left, nameMaxW);
-
-        // ── 8. Value (right side, vertically centered in top area) ────────────
-        float valRightX  = cardX + cardW - RightPad - (opts.ShowPercentage ? PctW + 4f : 0f);
-        Draw(canvas, FormatVal((long)val, metric), valRightX, topMidY, FtValue, true,
-             isLocal ? LocalAccent : TextPrim, Align.Right);
-
-        if (opts.ShowPercentage && pct > 0.001)
-            Draw(canvas, $"{pct * 100.0:F0}%", cardX + cardW - RightPad, topMidY, FtSub, false, TextMuted, Align.Right);
-
-        // ── 9. Card border (subtle accent rim) ────────────────────────────────
-        _p.Style       = SKPaintStyle.Stroke;
-        _p.StrokeWidth = 1f;
-        _p.Color       = (isLocal ? LocalAccent : accent).WithAlpha(0x35);
-        canvas.DrawRoundRect(cardRect, CardR, CardR, _p);
-        _p.Style = SKPaintStyle.Fill;
-
-        canvas.RestoreToCount(rowSave);
-    }
-
-    /// Draw one right-aligned figure and return the new right edge.
-    private float DrawFigure(SKCanvas canvas, string text, float rightX, float midY, SKColor col)
-    {
-        const float FigSz = 11f;
-        using var font = Font(FigSz, false);
-        float wide = font.MeasureText(text);
-        Draw(canvas, text, rightX, midY, FigSz, false, col, Align.Right);
-        return rightX - wide - 6f;
+        if (colW <= 0f) return rightX;
+        Draw(canvas, text, rightX, midY, 11f * sc, false, col, Align.Right);
+        if (_recordingTotalHits && sortMetric.HasValue)
+            TotalHits.Add((rightX - colW, rightX, sortMetric.Value));
+        return rightX - colW - 6f * sc;
     }
 
     // ── Minimal row (single-line condensed) ──────────────────────────────────
@@ -833,61 +703,63 @@ public sealed class MeterCanvas : IDisposable
         float y, float rowH, double val, double pct, MeterType metric, double dur,
         DisplayOptions opts, SKColor barColor)
     {
-        const float IconSz  = 18f;  // small job icon size
-        const float RankSzM = 11f;  // rank font size
-        const float NameSzM = 11f;  // name font size
-        const float ValSzM  = 11f;  // value font size
-        const float PadL    =  6f;  // left padding
-        const float PadR    =  6f;  // right padding
+        float sc = Scale(opts);
+        float IconSz  = 18f * sc;   // small job icon size
+        float RankSzM = 11f * sc;   // rank font size
+        float NameSzM = 11f * sc;   // name font size
+        float ValSzM  = 11f * sc;   // value font size
+        float PadL    =  6f * sc;   // left padding
+        float PadR    =  6f * sc;   // right padding
 
         float midY = y + rowH * 0.5f;
         float effW = w - opts.ScrollbarW; // content width excluding scrollbar track
 
-        bool transparent = opts.Style.IsTransparent();
-
-        // Row background — alternating (full width). Transparent has no panel,
-        // so the zebra striping and the separator both go.
-        if (!transparent)
+        // Row background — alternating (full width).
         {
-            _p.Color = rowIdx % 2 == 0
-                ? new SKColor(0x1C, 0x16, 0x18, 0xFF)
-                : new SKColor(0x18, 0x12, 0x14, 0xFF);
+            _p.Color = Panel(rowIdx % 2 == 0 ? RowEven : RowOdd, opts);
             canvas.DrawRect(SKRect.Create(0, y, w, rowH), _p);
         }
 
-        // Bar as background fill (proportional width, within effW). In
-        // Transparent this is the only fill left, and the one thing carrying
-        // the comparison, so it gets the full row height and a configurable
-        // alpha rather than the fixed 0x55 the panelled styles use.
+        // Bar as background fill (proportional width, within effW). The bar is
+        // what carries the comparison, so its opacity is the configured value —
+        // previously this read a style branch that no longer exists, which left
+        // the setting doing nothing.
         if (pct > 0.001)
         {
             float barFillW = effW * (float)pct;
-            byte  alpha    = transparent
-                ? (byte)Math.Clamp(opts.BarAlpha * 255f, 0f, 255f)
-                : (byte)0x55;
+            byte  alpha    = (byte)Math.Clamp(
+                (opts.BarAlpha <= 0f ? 0f : opts.BarAlpha) * 255f, 0f, 255f);
             _p.Color = barColor.WithAlpha(alpha);
             canvas.DrawRect(SKRect.Create(0, y, barFillW, rowH), _p);
         }
 
         // Bottom separator
-        if (!transparent)
         {
-            _p.Color = new SKColor(0x28, 0x20, 0x22, 0xFF);
+            _p.Color = Panel(RowSep, opts);
             canvas.DrawRect(SKRect.Create(0, y + rowH - 1f, w, 1f), _p);
         }
 
         // Rank number
         SKColor rankCol = rank == 1 ? Gold : rank == 2 ? Silver : rank == 3 ? Bronze : TextMuted;
         float curX = PadL;
-        using (var rankFont = Font(RankSzM, true))
-        {
-            float rankW = rankFont.MeasureText(rank.ToString());
-            Draw(canvas, rank.ToString(), curX, midY, RankSzM, true, rankCol, Align.Left);
-            curX += rankW + 4f;
-        }
+        // Right-aligned inside a fixed column, so single and double digits both
+        // land the following icon at the same place. rank 0 is the total row:
+        // the column is still reserved so its figures line up with the rows.
+        if (rank > 0)
+            Draw(canvas, rank.ToString(), curX + _colRankW, midY, RankSzM, true,
+                 rankCol, Align.Right);
+        curX += _colRankW + 6f * sc;
 
         // Job icon (small, no badge)
-        if (opts.ShowJobIcon)
+        if (opts.JobColumn == JobDisplay.Text && rank > 0)
+        {
+            // Abbreviation instead of the icon: at 16-22px rows an icon is
+            // mostly a smudge, and three letters read cleanly at any scale.
+            string abbr = Jobs.TryGetValue(c.ClassJobId, out var jt) ? jt.Abbr : "???";
+            Draw(canvas, abbr, curX, midY, NameSzM, false, GetRoleColor(c.ClassJobId), Align.Left);
+            curX += _colJobW + 4f * sc;
+        }
+        else if (opts.JobColumn == JobDisplay.Icon && rank > 0)
         {
             var icon = GetJobIcon(c.ClassJobId);
             float iconY = y + (rowH - IconSz) * 0.5f;
@@ -901,42 +773,58 @@ public sealed class MeterCanvas : IDisposable
                 string abbr = Jobs.TryGetValue(c.ClassJobId, out var ji) ? ji.Abbr : "?";
                 Draw(canvas, abbr, curX + IconSz * 0.5f, midY, 9f, true, TextMuted, Align.Center);
             }
-            curX += IconSz + 4f;
+            curX += _colJobW + 4f * sc;
+        }
+        else if (opts.JobColumn != JobDisplay.None)
+        {
+            curX += _colJobW + 4f * sc;   // keep the total row's name aligned
         }
 
         // Right side: value + pct (measure first so name can truncate)
         float rightX = effW - PadR;
-        if (opts.ShowPercentage && pct > 0.001)
+        if (opts.ShowPercentage)
         {
-            string pctStr = $"{pct * 100.0:F0}%";
-            using var pctFont = Font(ValSzM, false);
-            float pctW2 = pctFont.MeasureText(pctStr);
-            Draw(canvas, pctStr, rightX, midY, ValSzM, false, TextMuted, Align.Right);
-            rightX -= pctW2 + 6f;
+            // Drawn even at ~0% so the column below it never shifts.
+            if (pct > 0.001)
+                Draw(canvas, $"{pct * 100.0:F0}%", rightX, midY, ValSzM, false,
+                     TextMuted, Align.Right);
+            rightX -= _colPctW + 6f;
         }
-        if (opts.ShowFullValues)
-        {
-            string valStr = FormatVal((long)val, metric);
-            using var valFont = Font(ValSzM, true);
-            float valW2 = valFont.MeasureText(valStr);
-            Draw(canvas, valStr, rightX, midY, ValSzM, true, TextPrim, Align.Right);
-            rightX -= valW2 + 8f;
-        }
+        // Fixed columns, right to left. Each metric owns one slot and one colour
+        // whether or not it is the one being sorted by — sorting reorders rows,
+        // it does not rearrange or recolour the numbers.
+        if (Col(opts, opts.ShowDamageValue, MeterType.DamageDealt))
+            rightX = DrawFigure(canvas, FormatVal(c.TotalDamageDealt, MeterType.DamageDealt, opts),
+                                rightX, midY, TextPrim, _colDmgW, sc, MeterType.DamageDealt);
+        if (Col(opts, opts.ShowDps, MeterType.DPS))
+            rightX = DrawFigure(canvas, FormatVal((long)c.GetDps(dur), MeterType.DPS, opts),
+                                rightX, midY, TextMuted, _colDpsW, sc, MeterType.DPS);
 
-        // Optional extra figures, right to left: DPS, then HPS, then total heals.
-        // The healing pair is skipped entirely for combatants who never healed,
-        // so a party of DPS keeps the row it had.
-        if (opts.ShowDps)
-            rightX = DrawFigure(canvas, FormatVal((long)c.GetDps(dur), MeterType.DPS),
-                                rightX, midY, TextMuted);
-
+        // Non-healers leave the healing columns blank rather than closing them
+        // up, so every row's name still ends at the same x.
         bool healed = c.TotalHealingDone > 0;
-        if (opts.ShowHps && healed)
-            rightX = DrawFigure(canvas, FormatVal((long)c.GetHps(dur), MeterType.HPS),
-                                rightX, midY, HealTint);
-        if (opts.ShowHealingValue && healed)
-            rightX = DrawFigure(canvas, FormatVal(c.TotalHealingDone, MeterType.HealingDone),
-                                rightX, midY, HealTint);
+        if (Col(opts, opts.ShowHps, MeterType.HPS))
+            rightX = DrawFigure(canvas, healed ? FormatVal((long)c.GetHps(dur), MeterType.HPS, opts) : "",
+                                rightX, midY, HealTint, _colHpsW, sc, MeterType.HPS);
+        if (Col(opts, opts.ShowHealingValue, MeterType.HealingDone))
+            rightX = DrawFigure(canvas, healed ? FormatVal(c.TotalHealingDone, MeterType.HealingDone, opts) : "",
+                                rightX, midY, HealTint, _colHealW, sc, MeterType.HealingDone);
+
+        if (Col(opts, opts.ShowOverhealing, MeterType.Overhealing))
+            rightX = DrawFigure(canvas,
+                                c.TotalOverhealingDone > 0
+                                    ? FormatVal(c.TotalOverhealingDone, MeterType.Overhealing, opts) : "",
+                                rightX, midY, OverhealTint, _colOverhealW, sc, MeterType.Overhealing);
+        if (Col(opts, opts.ShowDamageTaken, MeterType.DamageTaken))
+            rightX = DrawFigure(canvas,
+                                c.TotalDamageTaken > 0
+                                    ? FormatVal(c.TotalDamageTaken, MeterType.DamageTaken, opts) : "",
+                                rightX, midY, TakenTint, _colTakenW, sc, MeterType.DamageTaken);
+        if (Col(opts, opts.ShowAvoidable, MeterType.AvoidableDamageTaken))
+            rightX = DrawFigure(canvas,
+                                c.TotalAvoidableDamageTaken > 0
+                                    ? FormatVal(c.TotalAvoidableDamageTaken, MeterType.AvoidableDamageTaken, opts) : "",
+                                rightX, midY, AvoidTint, _colAvoidW, sc, MeterType.AvoidableDamageTaken);
 
         // Name (fills remaining space)
         string name = opts.ShowFullName ? c.Name : ToInitials(c.Name);
@@ -1141,27 +1029,73 @@ public sealed class MeterCanvas : IDisposable
             _            => SKTextAlign.Left,
         };
 
-        if (_shadow)
+        if (_outline > 0f)
         {
-            // One offset pass at ~55% of the glyph alpha. Cheap, and enough to
-            // hold the text apart from whatever the game draws underneath.
+            // An outline rather than a drop shadow. A shadow only darkens one
+            // side, so text over a bright floor AoE still washes out on the other
+            // three; a stroke surrounds every glyph and works on any backdrop —
+            // which is what makes low background opacity readable at all.
+            //
+            // Stroke first, fill over it: the stroke straddles the glyph edge, so
+            // drawing the fill second keeps the letterforms their true weight
+            // instead of being eaten from the inside.
             var fg = _p.Color;
-            _p.Color = new SKColor(0, 0, 0, (byte)(fg.Alpha * 0.55f));
-            canvas.DrawText(text, x + 1f, baselineY + 1f, skAlign, font, _p);
-            _p.Color = fg;
+            var prevStyle = _p.Style;
+            var prevWidth = _p.StrokeWidth;
+
+            _p.Style       = SKPaintStyle.Stroke;
+            _p.StrokeWidth = MathF.Max(1.5f, sz * 0.16f) * _outline;
+            _p.StrokeJoin  = SKStrokeJoin.Round;
+            _p.Color       = new SKColor(0, 0, 0, (byte)(fg.Alpha * 0.85f));
+            canvas.DrawText(text, x, baselineY, skAlign, font, _p);
+
+            _p.Style       = prevStyle;
+            _p.StrokeWidth = prevWidth;
+            _p.Color       = fg;
         }
 
         canvas.DrawText(text, x, baselineY, skAlign, font, _p);
     }
 
+    // Preference order. SKTypeface.Default under Wine is whatever fontconfig
+    // happens to hand back — often a serif or a wide grotesque that makes the
+    // number columns ragged. These are picked for legibility at 11px and for
+    // having even digit widths; the first one present wins.
+    private static readonly string[] PreferredFonts =
+    {
+        "Inter",
+        "Segoe UI",
+        "Roboto",
+        "Noto Sans",
+        "Open Sans",
+        "Source Sans Pro",
+        "DejaVu Sans",
+    };
+
+    private static SKTypeface Resolve(SKFontStyleWeight weight)
+    {
+        foreach (var family in PreferredFonts)
+        {
+            var face = SKTypeface.FromFamilyName(
+                family, weight, SKFontStyleWidth.Normal, SKFontStyleSlant.Upright);
+            // Skia substitutes rather than returning null, so confirm we actually
+            // got the family we asked for before accepting it.
+            if (face != null &&
+                string.Equals(face.FamilyName, family, StringComparison.OrdinalIgnoreCase))
+                return face;
+            face?.Dispose();
+        }
+
+        return SKTypeface.FromFamilyName(null, weight, SKFontStyleWidth.Normal,
+                                         SKFontStyleSlant.Upright)
+               ?? SKTypeface.Default;
+    }
+
     // Resolved once. Previously every Draw() call hit the font manager, which at
     // ~10 calls per row, 8 rows, 60fps is thousands of lookups a second inside
     // the render path — and the typeface handle was left to the finalizer.
-    private static readonly SKTypeface TypefaceRegular = SKTypeface.Default;
-    private static readonly SKTypeface TypefaceBold =
-        SKTypeface.FromFamilyName(null, SKFontStyleWeight.Bold,
-                                  SKFontStyleWidth.Normal, SKFontStyleSlant.Upright)
-        ?? SKTypeface.Default;
+    private static readonly SKTypeface TypefaceRegular = Resolve(SKFontStyleWeight.Normal);
+    private static readonly SKTypeface TypefaceBold    = Resolve(SKFontStyleWeight.Bold);
 
     private static SKFont Font(float sz, bool bold) =>
         new(bold ? TypefaceBold : TypefaceRegular, sz);
@@ -1189,10 +1123,11 @@ public sealed class MeterCanvas : IDisposable
             c.Alpha);
     }
 
-    private static string FormatVal(long v, MeterType m) =>
-        m is MeterType.DPS or MeterType.HPS
-            ? $"{MainWindow.FormatNumber(v)}/s"
-            : MainWindow.FormatNumber(v);
+    private static string FormatVal(long v, MeterType m, DisplayOptions opts)
+    {
+        var n = opts.AbbreviateValues ? MainWindow.FormatNumber(v) : v.ToString("N0");
+        return m is MeterType.DPS or MeterType.HPS ? n + "/s" : n;
+    }
 
     // ── Group accent helper ───────────────────────────────────────────────────
     public static SKColor GroupAccent(CombatantType t) => t switch

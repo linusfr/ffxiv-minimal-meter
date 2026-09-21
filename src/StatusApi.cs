@@ -29,14 +29,13 @@ namespace MinimalMeter;
 ///   GET /get/all                          → alias for /config (matches FFXIV-TV convention)
 ///
 ///   GET /set/meter?v=DamageDealt          → change current meter type
-///   GET /set/showfullvalues?v=true        → toggle full numeric values
+///   POST /set/abbreviatevalues?v=true     → 12.4k rather than 12,431
 ///   GET /set/showpercentage?v=true        → toggle % of group total
 ///   GET /set/showplayerserver?v=true      → toggle @Server suffix
 ///   GET /set/showfullname?v=true          → toggle full vs initials display
 ///   GET /set/showjobicon?v=true           → toggle job icon in meter rows
 ///   GET /set/lockwindow?v=true            → lock/unlock window position + size
-///   GET /set/opacity?v=0.92              → window opacity (0.1 – 1.0)
-///   GET /set/rowheight?v=22              → meter row height in px (16 – 40)
+///   POST /set/uiscale?v=1.0              → overall size scale (0.5 – 2.5)
 ///   GET /set/maxtemphistory?v=20         → max auto-saved sessions (1 – 50)
 ///
 ///   GET /action/session/save?id={id}     → move a temp session to saved
@@ -270,9 +269,9 @@ internal sealed class StatusApi : IDisposable
                 { c.CurrentMeter = mt; Save(); }
                 return $"{{\"meter\":{Q(c.CurrentMeter.ToString())}}}";
 
-            case "/set/showfullvalues":
-                if (TryBoolQ(q, "v", out bool sfv)) { c.ShowFullValues = sfv; Save(); }
-                return $"{{\"showFullValues\":{B(c.ShowFullValues)}}}";
+            case "/set/abbreviatevalues":
+                if (TryBoolQ(q, "v", out bool sfv)) { c.AbbreviateValues = sfv; Save(); }
+                return $"{{\"abbreviateValues\":{B(c.AbbreviateValues)}}}";
 
             case "/set/showpercentage":
                 if (TryBoolQ(q, "v", out bool sp)) { c.ShowPercentage = sp; Save(); }
@@ -294,13 +293,9 @@ internal sealed class StatusApi : IDisposable
                 if (TryBoolQ(q, "v", out bool lw)) { c.LockWindow = lw; Save(); }
                 return $"{{\"lockWindow\":{B(c.LockWindow)}}}";
 
-            case "/set/opacity":
-                if (TryFloatQ(q, "v", out float op)) { c.Opacity = Math.Clamp(op, 0.1f, 1f); Save(); }
-                return $"{{\"opacity\":{F(c.Opacity)}}}";
-
-            case "/set/rowheight":
-                if (TryFloatQ(q, "v", out float rh)) { c.RowHeight = Math.Clamp(rh, 16f, 40f); Save(); }
-                return $"{{\"rowHeight\":{F(c.RowHeight)}}}";
+            case "/set/uiscale":
+                if (TryFloatQ(q, "v", out float sc)) { c.UiScale = Math.Clamp(sc, 0.5f, 2.5f); Save(); }
+                return $"{{\"uiScale\":{F(c.UiScale)}}}";
 
             case "/set/maxtemphistory":
                 if (q.TryGetValue("v", out var mthStr) && int.TryParse(mthStr, out int maxH))
@@ -395,16 +390,13 @@ internal sealed class StatusApi : IDisposable
         return $$"""
         {
           "meter": {{Q(c.CurrentMeter.ToString())}},
-          "showFullValues": {{B(c.ShowFullValues)}},
+          "abbreviateValues": {{B(c.AbbreviateValues)}},
           "showPercentage": {{B(c.ShowPercentage)}},
           "showPlayerServer": {{B(c.ShowPlayerServer)}},
           "showFullName": {{B(c.ShowFullName)}},
           "showJobIcon": {{B(c.ShowJobIcon)}},
           "lockWindow": {{B(c.LockWindow)}},
-          "opacity": {{F(c.Opacity)}},
-          "rowHeight": {{F(c.RowHeight)}},
           "maxTempHistory": {{c.MaxTempHistory}},
-          "windowStyle": {{Q(c.Style.ToString())}},
           "barColors": [{{barColors}}]
         }
         """;

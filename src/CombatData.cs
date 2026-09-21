@@ -87,6 +87,9 @@ public class CombatantData
     public string        World      { get; set; } = "";
     public byte          ClassJobId { get; set; }
     public CombatantType Type       { get; set; } = CombatantType.Unknown;
+    /// Alliance group this player is in: 0 = your own, 1 and 2 the others, -1 if
+    /// not in an alliance at all (so: any bystander, and every non-alliance duty).
+    public int           AllianceIndex { get; set; } = -1;
 
     // ── Totals ────────────────────────────────────────────────────────────────
     public long TotalDamageDealt          { get; set; }

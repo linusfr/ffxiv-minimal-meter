@@ -120,10 +120,17 @@ public sealed class CombatTracker : IDisposable
     // are credited via DotAttribution, which remembers who applied what.
     private const uint ActorControlHoTDoT = 0x17;
 
-    // arg1 of a HoT_DoT packet says which it is. UNVERIFIED like the rest of the
-    // argument layout — confirm with LogDotPackets before trusting either branch;
-    // a wrong value here books heals as damage.
-    private const uint HotEffectKind = 4;
+    // arg2 distinguishes heal from damage. Observed as 14 on healing ticks; the
+    // damage value has not been seen yet, so anything that is not this constant
+    // is treated as damage.
+    private const uint HotEffectKind = 14;
+
+    // Raw ActorControl logging is a firehose — 0x93C alone fires hundreds of
+    // times a minute. A single global cap let that noise crowd out the category
+    // we actually care about, so the budget is PER CATEGORY, and 0x17 (the one
+    // being verified) is exempt entirely.
+    private const int AcLogPerCategory = 12;
+    private readonly Dictionary<uint, int> _acLogged = new();
 
     private delegate void ActorControlDelegate(
         uint entityId, uint category,
@@ -132,7 +139,6 @@ public sealed class CombatTracker : IDisposable
         GameObjectId targetId, bool isRecorded);
 
     private Hook<ActorControlDelegate>? _actorControlHook;
-    private readonly DotAttribution _dotAttribution = new();
 
     // ── Services ──────────────────────────────────────────────────────────────
     private readonly IPluginLog   _log;
@@ -507,7 +513,6 @@ public sealed class CombatTracker : IDisposable
     {
         if (ActiveSession != null) return;       // guard against double start
         _activeDots.Clear();                     // fresh DoT tracking per pull
-        _dotAttribution.Clear();                 // and no cross-pull tick credit
         _dotSim.Reset();
         _localCritHits = _localDhHits = _localTotalHits = 0;
         var zone    = GetZoneName();
@@ -876,13 +881,6 @@ public sealed class CombatTracker : IDisposable
                         // is the half the ActorControl tick packet is missing:
                         // `value` is the status id (ground-truthed upstream —
                         // Caustic Bite at lv80 emits kind=14, val=1200).
-                        if (_config.EnableDotAttribution)
-                        {
-                            _dotAttribution.OnStatusApplied(
-                                targetId: targetId,
-                                statusId: (uint)value,
-                                sourceId: casterEntityId);
-                        }
 
                         // The user just applied a status to an enemy. If the
                         // caster is the local player AND we have a recorded
@@ -1025,6 +1023,8 @@ public sealed class CombatTracker : IDisposable
             data.Name  = obj.Name.TextValue;
             data.World = GetPlayerWorld(obj);
             data.Type  = DetermineType(entityId, obj);
+            if (data.Type is CombatantType.PartyMember or CombatantType.FriendlyPlayer)
+                data.AllianceIndex = GetAllianceIndex(entityId);
         }
 
         if (charPtr != null)
@@ -1053,8 +1053,41 @@ public sealed class CombatTracker : IDisposable
         if (obj is IBattleChara chara)
             data.ClassJobId = (byte)chara.ClassJob.RowId;
 
+        data.AllianceIndex = GetAllianceIndex(entityId);
         lock (StateGate) { session.Combatants[entityId] = data; }
         return data;
+    }
+
+    /// <summary>
+    /// Which alliance group an entity belongs to, or -1 if none.
+    ///
+    /// Alliance members are not in IPartyList — only your own eight are — so
+    /// without this every one of the other sixteen is an undifferentiated
+    /// "friendly", mixed in with any bystander who happens to be in the zone.
+    /// GroupManager knows the split; AllianceFlags also tells us whether this is
+    /// the usual 3x8 or the 6x4 layout some content uses.
+    /// </summary>
+    private static unsafe int GetAllianceIndex(uint entityId)
+    {
+        if (entityId == 0) return -1;
+
+        var group = FFXIVClientStructs.FFXIV.Client.Game.Group.GroupManager
+                        .Instance()->GetGroup();
+        if (group == null || !group->IsAlliance) return -1;
+
+        int groups    = group->AllianceGroupIndexCount;
+        int perGroup  = group->IsSmallGroupAlliance ? 4 : 8;
+        for (int g = 0; g < groups; g++)
+        {
+            for (int i = 0; i < perGroup; i++)
+            {
+                var member = group->GetAllianceMemberByGroupAndIndex(g, i);
+                if (member != null && member->EntityId == entityId)
+                    return g;
+            }
+        }
+
+        return -1;
     }
 
     private CombatantType DetermineType(uint entityId, IGameObject obj)
@@ -1182,6 +1215,29 @@ public sealed class CombatTracker : IDisposable
     {
         try
         {
+            // With raw logging on, record EVERY category, not just the one we
+            // expect. If 0x17 turns out to be wrong for the live client, the only
+            // way to find the right one is to see what actually arrives — an
+            // empty log otherwise proves nothing either way.
+            if (!_config.LogDotPackets)
+            {
+                // Reset the budget so toggling logging off and on gives a fresh
+                // capture rather than silence from already-capped categories.
+                if (_acLogged.Count > 0) _acLogged.Clear();
+            }
+            else
+            {
+                _acLogged.TryGetValue(category, out int seen);
+                if (category == ActorControlHoTDoT || seen < AcLogPerCategory)
+                {
+                    _acLogged[category] = seen + 1;
+                    _log.Information(
+                        $"MinimalMeter: ActorControl cat=0x{category:X2} target={entityId} " +
+                        $"a1={arg1} a2={arg2} a3={arg3} a4={arg4}"
+                        + (category == ActorControlHoTDoT ? "   <-- HoT_DoT" : ""));
+                }
+            }
+
             if (category == ActorControlHoTDoT)
                 HandlePeriodicTick(entityId, arg1, arg2, arg3, arg4);
         }
@@ -1198,45 +1254,47 @@ public sealed class CombatTracker : IDisposable
     }
 
     /// <summary>
-    /// Credit one HoT_DoT tick.
+    /// Credit one HoT_DoT tick (ActorControl category 0x17).
     ///
-    /// WARNING: the argument layout below is a best guess and has NOT been
-    /// verified against a live packet. Enable Config.LogDotPackets, take the
-    /// plugin into a fight, and read the Dalamud log before trusting any number
-    /// this produces. See docs/DOT_ATTRIBUTION.md for the procedure.
+    /// Layout, read off live packets rather than assumed:
+    ///     entityId = the actor RECEIVING the tick
+    ///     arg1     = amount
+    ///     arg2     = effect kind
+    ///     arg3     = amount again (mirrors arg1 in every sample seen)
+    ///     arg4     = the SOURCE actor's entity id
     ///
-    /// Assumed: arg1 = effect kind (DoT vs HoT), arg2 = status id,
-    ///          arg3 = amount. If the log says otherwise, fix it here.
+    /// arg4 is the important one: the packet attributes itself, so no status
+    /// bookkeeping is needed. DotAttribution is kept only as a fallback for the
+    /// case where arg4 is absent or unresolvable.
+    ///
+    /// Verified against healing ticks. The damage path shares the category and
+    /// is believed identical, but has not been observed directly — see
+    /// docs/DOT_ATTRIBUTION.md.
     /// </summary>
     private void HandlePeriodicTick(uint targetEntityId, uint arg1, uint arg2, uint arg3, uint arg4)
     {
         if (ActiveSession == null) return;
 
-        if (_config.LogDotPackets)
-        {
-            _log.Information(
-                $"MinimalMeter: ActorControl 0x17 target={targetEntityId} " +
-                $"arg1={arg1} arg2={arg2} arg3={arg3} arg4={arg4}");
-        }
-
         if (!_config.EnableDotAttribution) return;
 
-        uint statusId = arg2;
-        long amount   = arg3;
-        if (statusId == 0 || amount <= 0) return;
+        long amount = arg1;
+        if (amount <= 0) return;
 
         var tickMs = (long)(DateTime.UtcNow - ActiveSession.StartTime).TotalMilliseconds;
 
-        var sourceId = _dotAttribution.Resolve(targetEntityId, statusId);
-        if (sourceId == null) return;   // nobody we know applied it — drop it
+        // The packet names its own source. There is no fallback: the tick carries
+        // no status id, so the old (target, statusId) map has nothing to look up
+        // with — consulting it with arg2 (an effect kind) could only ever miss.
+        if (arg4 == 0) return;
+        uint sourceId = arg4;
 
-        var source = GetOrCreateCombatantById(ActiveSession, sourceId.Value);
+        var source = GetOrCreateCombatantById(ActiveSession, sourceId);
         if (source == null) return;
 
         // Category 0x17 is HoT_DoT — one packet type for both. arg1 distinguishes
         // them. Same attribution map either way: a regen on an ally is keyed the
         // same as a DoT on a boss, (target, statusId) -> whoever applied it.
-        bool isHeal = arg1 == HotEffectKind;
+        bool isHeal = arg2 == HotEffectKind;
 
         if (isHeal)
         {
@@ -1256,8 +1314,8 @@ public sealed class CombatTracker : IDisposable
             _combatLog.Write(
                 "\"e\":" + (isHeal ? "\"hottick\"" : "\"dottick\"") + "," +
                 "\"target\":" + targetEntityId + "," +
-                "\"status\":" + statusId + "," +
-                "\"source\":" + sourceId.Value + "," +
+                "\"kind\":" + arg2 + "," +
+                "\"source\":" + sourceId + "," +
                 "\"val\":" + amount);
         }
         catch { /* never fail combat over a log entry */ }

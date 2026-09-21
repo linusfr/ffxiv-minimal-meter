@@ -4,6 +4,7 @@ using System.Linq;
 using System.Numerics;
 
 using Dalamud.Bindings.ImGui;
+using Dalamud.Game.ClientState.Conditions;
 
 namespace MinimalMeter.Windows;
 
@@ -14,7 +15,10 @@ namespace MinimalMeter.Windows;
 /// </summary>
 public sealed class MainWindow : IDisposable
 {
-    private bool _isVisible = false;
+    // Mirrors Config.MeterVisible: visible on first install, because a meter you
+    // must discover a command to see is one most people conclude is broken — and
+    // closing it persists, because ImGui's X should mean what it says.
+    private bool _isVisible;
     public bool IsVisible { get => _isVisible; set => _isVisible = value; }
 
     private readonly Plugin _plugin;
@@ -30,7 +34,6 @@ public sealed class MainWindow : IDisposable
 
     // Scroll state
     private float _scrollY = 0f;
-    private const float ToolbarH = 26f;
 
     // Layout state shared between DrawCanvasHeader and DrawCanvasBody
     private Vector2 _imgOrigin;
@@ -47,6 +50,13 @@ public sealed class MainWindow : IDisposable
     // bottom pinned while leaving the user free to drag the window normally.
     private float   _lastAutoHeight;
     private Vector2 _lastWindowPos;
+    private Vector2 _lastWindowSize;
+    private int     _lastGroupCount = 1;
+    private DateTime? _leftCombatAt;
+    private DateTime? _emptySince;
+    private DateTime _demoStart = DateTime.MinValue;
+
+
     private int     _canvasW;
     private CombatSession? _frameSession;
 
@@ -55,63 +65,73 @@ public sealed class MainWindow : IDisposable
     {
         _plugin = plugin;
         _meter  = new MeterCanvas(Plugin.TextureProvider);
+        _isVisible = _plugin.Config.MeterVisible;
     }
 
     // ── Draw ──────────────────────────────────────────────────────────────────
     public void Draw()
     {
         if (!_isVisible) return;
+        if (HiddenByContext()) return;
 
-        bool transparent = Config.Style.IsTransparent();
 
         var flags = ImGuiWindowFlags.NoTitleBar
                   | ImGuiWindowFlags.NoScrollbar
                   | ImGuiWindowFlags.NoScrollWithMouse;
         if (Config.LockWindow)
             flags |= ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize;
-        if (transparent)
-            flags |= ImGuiWindowFlags.NoBackground;
 
         // Dynamic min size: always fit at least 4 rows + 1 group header + toolbar + canvas header
         const float WinPadV  = 10f; // 5px top + 5px bottom window padding
         const float MinRows  = 4f;
         const float MinWidth = 280f;
-        float dynHeaderH = MeterCanvas.GetEffectiveHeaderH(MeterCanvas.Normalize(new MeterCanvas.DisplayOptions
+        float dynHeaderH = MeterCanvas.GetEffectiveHeaderH(new MeterCanvas.DisplayOptions
         {
-            Style              = Config.Style,
-            ShowTitleBar       = Config.ShowTitleBar,
             ShowEncounterTotal = Config.ShowEncounterTotal,
-        }));
+            UiScale            = Config.UiScale,   // or the header measures at 1x
+        });
         float dynRowH   = MeterCanvas.EffectiveRowH(new MeterCanvas.DisplayOptions
         {
-            Style     = Config.Style,
-            RowHeight = Config.RowHeight,
+            UiScale = Config.UiScale,
         });
         float dynGroupH = Config.ShowGroupHeaders ? MeterCanvas.GroupH : 0f;
-        float minHeight = dynHeaderH + 1f + dynGroupH + MinRows * dynRowH + ToolbarH + WinPadV;
+        float minHeight = dynHeaderH + 1f + dynGroupH + MinRows * dynRowH + WinPadV;
 
-        if (Config.GrowUpward)
+        // Height always follows content; only the anchored edge varies.
         {
             // Height the content wants: last frame's texture plus the chrome that
             // sits outside it. Clamped so an alliance raid cannot fill the screen.
             float contentH = (_meter.TotalHeight > 0 ? _meter.TotalHeight : minHeight)
-                             + ToolbarH + WinPadV;
+                             + WinPadV;
+
+            // When growing upward the window IS the content, so the usual
+            // four-row floor is wrong: it left slack under a solo or light-party
+            // meter, and since rows draw from the top that slack appeared as the
+            // meter drifting off the bottom edge. One row is the real floor.
+            float growFloor = dynHeaderH + 1f + dynRowH + WinPadV;
             // Ceiling expressed in rows: header + chrome + N rows. A full party
             // is 8, so by default the meter is exactly party-sized and only an
             // alliance raid pushes it into scrolling.
-            float capH = dynHeaderH + 1f + dynGroupH
+            float capH = dynHeaderH + 1f
+                         + MeterCanvas.GroupOverhead(_lastGroupCount, ShowHeadersFor(_lastGroupCount))
                          + Math.Clamp(Config.MaxGrowRows, 1, 24) * dynRowH
-                         + ToolbarH + WinPadV;
-            float autoH    = Math.Clamp(contentH, minHeight, Math.Max(minHeight, capH));
+                         + WinPadV;
+            float autoH    = Math.Clamp(contentH, growFloor, Math.Max(growFloor, capH));
 
             // Lock height to the content, leave width draggable.
             ImGui.SetNextWindowSizeConstraints(new Vector2(MinWidth, autoH),
                                                new Vector2(1000, autoH));
-            ImGui.SetNextWindowSize(new Vector2(420, autoH), ImGuiCond.FirstUseEver);
+            // Force it: a constraint alone will not shrink a window that ImGui
+            // already sized larger, so dropping 8 rows to 1 would never contract.
+            ImGui.SetNextWindowSize(new Vector2(
+                _lastWindowSize.X >= MinWidth ? _lastWindowSize.X : 420f, autoH),
+                ImGuiCond.Always);
 
-            // Grew or shrank since last frame → move the top edge by the delta so
-            // the bottom edge does not budge.
-            if (_lastAutoHeight > 0f && Math.Abs(autoH - _lastAutoHeight) > 0.5f)
+            // Grew or shrank since last frame. Growing UP means moving the top
+            // edge by the delta so the bottom stays put; growing DOWN means
+            // leaving the position alone, since ImGui already anchors top-left.
+            if (Config.Grow == GrowDirection.Up
+                && _lastAutoHeight > 0f && Math.Abs(autoH - _lastAutoHeight) > 0.5f)
             {
                 // _lastWindowPos is captured after Begin() below; calling
                 // GetWindowPos() out here would read whichever window ImGui
@@ -123,26 +143,17 @@ public sealed class MainWindow : IDisposable
             }
             _lastAutoHeight = autoH;
         }
-        else
-        {
-            ImGui.SetNextWindowSizeConstraints(new Vector2(MinWidth, minHeight), new Vector2(1000, 3000));
-            ImGui.SetNextWindowSize(new Vector2(420, 380), ImGuiCond.FirstUseEver);
-            _lastAutoHeight = 0f;
-        }
-        ImGui.SetNextWindowBgAlpha(Config.Opacity);
 
-        // Transparent gives up the padding and the border too — a 1.5px rose rim
-        // is still a window frame, and the point is that there isn't one.
-        float WinPad = transparent ? 0f : 5f;
+        const float WinPad = 5f;
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding,  new Vector2(WinPad, WinPad));
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing,    Vector2.Zero);
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, transparent ? 0f : 1.5f);
-        ImGui.PushStyleColor(ImGuiCol.Border,    transparent
-            ? new Vector4(0f, 0f, 0f, 0f)
-            : new Vector4(0.38f, 0.22f, 0.24f, 0.90f));
-        ImGui.PushStyleColor(ImGuiCol.WindowBg,  transparent
-            ? new Vector4(0f, 0f, 0f, 0f)
-            : new Vector4(0x10 / 255f, 0x0C / 255f, 0x0D / 255f, 1f));
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f);
+        // The Skia canvas paints its own panel, so ImGui contributes nothing
+        // visual: no fill (it would darken the canvas a second time) and no
+        // border (with a clear fill it was just a thin box floating around the
+        // meter). The canvas is the single source of the backdrop.
+        ImGui.PushStyleColor(ImGuiCol.Border,   new Vector4(0f, 0f, 0f, 0f));
+        ImGui.PushStyleColor(ImGuiCol.WindowBg, new Vector4(0f, 0f, 0f, 0f));
         bool open = ImGui.Begin("###MinimalMeterMain", ref _isVisible, flags);
         ImGui.PopStyleVar(3);
         ImGui.PopStyleColor(2);
@@ -151,133 +162,19 @@ public sealed class MainWindow : IDisposable
 
         // Remembered for the next frame's bottom-anchored reposition, and updated
         // here so a user drag is picked up like any other position change.
-        _lastWindowPos = ImGui.GetWindowPos();
+        _lastWindowPos  = ImGui.GetWindowPos();
+        _lastWindowSize = ImGui.GetWindowSize();
 
-        // In Transparent the toolbar is the last opaque thing on screen, so it
-        // only appears while the cursor is actually on the meter.
-        bool toolbarVisible = !(transparent && Config.AutoHideToolbar)
-                              || ImGui.IsWindowHovered(ImGuiHoveredFlags.RootAndChildWindows);
 
         DrawCanvasHeader();   // renders SkiaSharp canvas + draws header slice
-        if (toolbarVisible)
-            DrawToolbar();    // toolbar sits right below the header
-        if (Config.CurrentView == ViewMode.Graph)
-            DrawGraphBody();  // line-graph alternative to the bar body
-        else
-            DrawCanvasBody(); // body slice + scrollbar + hit-test buttons
+        DrawCanvasBody();     // body slice + scrollbar + hit-test buttons
         DrawDetailPopup();
 
         ImGui.End();
     }
 
     // ── Toolbar ───────────────────────────────────────────────────────────────
-    private void DrawToolbar()
-    {
-        // Draw a dark background strip behind the toolbar
-        var dl       = ImGui.GetWindowDrawList();
-        var stripTL  = ImGui.GetCursorScreenPos();
-        var stripBR  = stripTL + new Vector2(ImGui.GetContentRegionAvail().X, 26f);
-        // Transparent still needs something behind the buttons to read against,
-        // but a scrim rather than a panel — and only while it is on screen.
-        bool transparentStrip = Config.Style.IsTransparent();
-        dl.AddRectFilled(stripTL, stripBR, transparentStrip ? 0xB00D0D1A : 0xFF0D0D1A);
-        if (!transparentStrip)
-            dl.AddLine(stripTL, new Vector2(stripBR.X, stripTL.Y), 0xFF282840);  // top border
 
-        // Restore spacing for interactive toolbar widgets
-        ImGui.PushStyleVar(ImGuiStyleVar.FramePadding,  new Vector2(6, 3));
-        ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing,   new Vector2(4, 0));
-
-        // Dark-themed combo + buttons
-        ImGui.PushStyleColor(ImGuiCol.FrameBg,         0xFF1A1A2E);
-        ImGui.PushStyleColor(ImGuiCol.FrameBgHovered,  0xFF252540);
-        ImGui.PushStyleColor(ImGuiCol.Button,          0xFF1A1A2E);
-        ImGui.PushStyleColor(ImGuiCol.ButtonHovered,   0xFF2A2A50);
-        ImGui.PushStyleColor(ImGuiCol.ButtonActive,    0xFF3A3A70);
-
-        // Fixed button widths so layout is predictable regardless of window size
-        const float BtnLive     = 54f;   // "← Live" — only shown when a historical session is pinned
-        const float BtnView     = 44f;   // "Chart" / "Graph" — each
-        const float BtnHistory  = 62f;
-        const float BtnSettings = 68f;
-        const float BtnSpacing  =  4f;
-        const float RightMargin =  8f;
-
-        bool pinnedHistory = _plugin._historyWindow.PinnedSession != null;
-
-        float avail  = ImGui.GetContentRegionAvail().X;
-        float comboW = avail
-            - (pinnedHistory ? BtnLive + BtnSpacing : 0)
-            - BtnView * 2
-            - BtnHistory - BtnSettings
-            - BtnSpacing * 4f - RightMargin;
-
-        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 4f);
-
-        // "← Live" appears only when the History window has pinned a past session
-        // for viewing. Clicking it returns the main meter to the live data stream.
-        // Amber-colored so it stands out as a "you are in a non-default state" cue.
-        if (pinnedHistory)
-        {
-            ImGui.PushStyleColor(ImGuiCol.Button,        0xFF1A66C8);
-            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0xFF2A88E0);
-            if (ImGui.Button("\u2190 Live##tb", new Vector2(BtnLive, 0)))
-                _plugin._historyWindow.ClearPin();
-            ImGui.PopStyleColor(2);
-            ImGui.SameLine(0, BtnSpacing);
-        }
-
-        // Chart / Graph view toggle — push a highlighted color when active.
-        DrawViewToggleButton("Chart##tb", ViewMode.Chart, BtnView);
-        ImGui.SameLine(0, BtnSpacing);
-        DrawViewToggleButton("Graph##tb", ViewMode.Graph, BtnView);
-
-        ImGui.SameLine(0, BtnSpacing);
-        ImGui.SetNextItemWidth(Math.Max(40f, comboW));
-        if (ImGui.BeginCombo("##MeterType", Config.CurrentMeter.DisplayName()))
-        {
-            foreach (MeterType mt in Enum.GetValues<MeterType>())
-            {
-                var selected = mt == Config.CurrentMeter;
-                if (ImGui.Selectable(mt.DisplayName(), selected))
-                {
-                    Config.CurrentMeter = mt;
-                    _plugin.SaveConfig();
-                }
-                if (selected) ImGui.SetItemDefaultFocus();
-            }
-            ImGui.EndCombo();
-        }
-
-        ImGui.SameLine(0, BtnSpacing);
-        if (ImGui.Button("History##tb", new Vector2(BtnHistory, 0)))
-            _plugin._historyWindow.IsVisible = !_plugin._historyWindow.IsVisible;
-
-        ImGui.SameLine(0, BtnSpacing);
-        if (ImGui.Button("Settings##tb", new Vector2(BtnSettings, 0)))
-            _plugin._settingsWindow.IsVisible = !_plugin._settingsWindow.IsVisible;
-
-        ImGui.PopStyleColor(5);
-        ImGui.PopStyleVar(2);
-
-        ImGui.SetCursorPosY(ImGui.GetCursorPosY() + 2f);
-    }
-
-    private void DrawViewToggleButton(string label, ViewMode mode, float width)
-    {
-        bool active = Config.CurrentView == mode;
-        if (active)
-        {
-            ImGui.PushStyleColor(ImGuiCol.Button,        0xFF3A3A70);
-            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, 0xFF4A4A80);
-        }
-        if (ImGui.Button(label, new Vector2(width, 0)))
-        {
-            Config.CurrentView = mode;
-            _plugin.SaveConfig();
-        }
-        if (active) ImGui.PopStyleColor(2);
-    }
 
     // ── Phase 1: render canvas + draw header slice ────────────────────────────
     // Stores layout state in fields for DrawCanvasBody to consume.
@@ -300,7 +197,36 @@ public sealed class MainWindow : IDisposable
             var enemies  = _frameSession.GetSortedByType(metric, CombatantType.Enemy);
 
             if (party.Count    > 0) groups.Add(new MeterCanvas.GroupData { Label = "Party",    Combatants = party,    Accent = MeterCanvas.GroupAccent(CombatantType.PartyMember) });
-            if (friendly.Count > 0 && Config.ShowFriendlyGroup) groups.Add(new MeterCanvas.GroupData { Label = "Friendly", Combatants = friendly, Accent = MeterCanvas.GroupAccent(CombatantType.FriendlyPlayer) });
+            bool showFriendly = Config.ShowFriendlyGroup || Config.DemoCombatants > 0;
+            if (friendly.Count > 0 && showFriendly)
+            {
+                if (Config.GroupByAlliance)
+                {
+                    // Alliance members are indistinguishable from bystanders in
+                    // IPartyList, so the tracker asks GroupManager which alliance
+                    // each is in. Anything with no alliance stays "Friendly".
+                    foreach (var byAlliance in friendly
+                                 .Where(c => c.AllianceIndex >= 0)
+                                 .GroupBy(c => c.AllianceIndex)
+                                 .OrderBy(g => g.Key))
+                    {
+                        groups.Add(new MeterCanvas.GroupData
+                        {
+                            Label      = "Alliance " + (char)('A' + byAlliance.Key),
+                            Combatants = byAlliance.ToList(),
+                            Accent     = MeterCanvas.GroupAccent(CombatantType.FriendlyPlayer),
+                        });
+                    }
+
+                    var loose = friendly.Where(c => c.AllianceIndex < 0).ToList();
+                    if (loose.Count > 0)
+                        groups.Add(new MeterCanvas.GroupData { Label = "Friendly", Combatants = loose, Accent = MeterCanvas.GroupAccent(CombatantType.FriendlyPlayer) });
+                }
+                else
+                {
+                    groups.Add(new MeterCanvas.GroupData { Label = "Friendly", Combatants = friendly, Accent = MeterCanvas.GroupAccent(CombatantType.FriendlyPlayer) });
+                }
+            }
             if (enemies.Count  > 0 && Config.ShowEnemyGroup)    groups.Add(new MeterCanvas.GroupData { Label = "Enemies",  Combatants = enemies,  Accent = MeterCanvas.GroupAccent(CombatantType.Enemy) });
 
             if (groups.Count == 0 && _frameSession.Combatants.Count > 0)
@@ -318,36 +244,47 @@ public sealed class MainWindow : IDisposable
         {
             ShowFullName       = Config.ShowFullName,
             ShowPlayerServer   = Config.ShowPlayerServer,
-            ShowJobIcon        = Config.ShowJobIcon,
+            JobColumn          = Config.JobColumn,
             ShowPercentage     = Config.ShowPercentage,
             BarColorAbgr       = Config.GetBarColor(metric),
-            Style              = Config.Style,
             ShowEncounterTotal = Config.ShowEncounterTotal,
-            ShowGroupHeaders   = Config.ShowGroupHeaders,
-            ShowTitleBar       = Config.ShowTitleBar,
+            ShowGroupHeaders   = ShowHeadersFor(groups.Count),
             TextShadow         = Config.TextShadow,
+            OutlineStrength    = Config.OutlineStrength,
             BarAlpha           = Config.BarAlpha,
-            ShowFullValues     = Config.ShowFullValues,
-            RowHeight          = Config.RowHeight,
+            PanelAlpha         = Config.PanelAlpha,
+            AbbreviateValues   = Config.AbbreviateValues,
+            Style_Metric       = metric,
+            ShowDamageValue    = Config.ShowDamageValue,
             ShowDps            = Config.ShowDps,
             ShowHealingValue   = Config.ShowHealingValue,
             ShowHps            = Config.ShowHps,
+            UiScale            = Config.UiScale,
+            ShowDamageTaken    = Config.ShowDamageTaken,
+            ShowAvoidable      = Config.ShowAvoidable,
+            ShowOverhealing    = Config.ShowOverhealing,
         };
-        opts = MeterCanvas.Normalize(opts);
 
+        _lastGroupCount = Math.Max(1, groups.Count);
         _headerH = MeterCanvas.GetEffectiveHeaderH(opts);
 
         // Use last frame's TotalHeight to decide whether a scrollbar is needed
         float prevTexH   = _meter.TotalHeight > 0 ? _meter.TotalHeight : 40f;
         float prevBodyTH = Math.Max(0f, prevTexH - _headerH);
-        float prevBodyVH = Math.Max(0f, avail.Y - ToolbarH - _headerH);
-        opts.ScrollbarW  = prevBodyTH > prevBodyVH ? SbTrackW : 0f;
+        float prevBodyVH = Math.Max(0f, avail.Y - _headerH);
+        // Tolerance: with the window height derived from the texture height, the
+        // two can disagree by a fraction of a pixel through rounding and padding.
+        // Without slack that shows a scrollbar on content that fits exactly.
+        const float ScrollSlack = 2f;
+        opts.ScrollbarW  = prevBodyTH > prevBodyVH + ScrollSlack ? SbTrackW : 0f;
 
         _meter.Render(_canvasW, _frameSession, groups, metric, dur, pinned, localId, opts);
         _texH    = _meter.TotalHeight > 0 ? _meter.TotalHeight : 40f;
         _bodyTexH  = Math.Max(0f, _texH - _headerH);
-        _bodyViewH = Math.Max(0f, avail.Y - ToolbarH - _headerH);
-        _maxScroll = Math.Max(0f, _bodyTexH - _bodyViewH);
+        _bodyViewH = Math.Max(0f, avail.Y - _headerH);
+        _maxScroll = _bodyTexH > _bodyViewH + ScrollSlack
+            ? _bodyTexH - _bodyViewH
+            : 0f;
 
         // Mouse wheel (processed here so scroll updates before body is drawn)
         if (ImGui.IsWindowHovered() && _maxScroll > 0f)
@@ -364,33 +301,45 @@ public sealed class MainWindow : IDisposable
 
         // Draw the header slice — toolbar will be placed right after this by Draw()
         if (_headerH > 0f)
+        {
             ImGui.Image(_meter.Handle.Value, new Vector2(_canvasW, _headerH),
                 new Vector2(0f, 0f), new Vector2(1f, _headerH / _texH));
 
-        // Title bar overlay buttons (drag + close) — placed over the header image
-        if (Config.ShowTitleBar)
-        {
-            float titleBarH = MeterCanvas.TitleBarH;
+            // Each figure in the total row is a sort control: the columns already
+            // exist and are already labelled by their own numbers, so clicking a
+            // summed value is the most direct way to say "order by this".
             var dl = ImGui.GetWindowDrawList();
-
-            if (!Config.LockWindow)
+            foreach (var (x0, x1, m) in _meter.TotalHits)
             {
-                ImGui.SetCursorScreenPos(_imgOrigin);
-                ImGui.InvisibleButton("##titleDrag", new Vector2(_canvasW - 22f, titleBarH));
-                if (ImGui.IsItemActive() && ImGui.IsMouseDragging(ImGuiMouseButton.Left))
-                    ImGui.SetWindowPos(ImGui.GetWindowPos() + ImGui.GetIO().MouseDelta);
-            }
+                var tl = new Vector2(_imgOrigin.X + x0, _imgOrigin.Y);
+                var sz = new Vector2(Math.Max(1f, x1 - x0), _headerH);
 
-            var closeTL = new Vector2(_imgOrigin.X + _canvasW - 20f, _imgOrigin.Y + 4f);
-            ImGui.SetCursorScreenPos(closeTL);
-            if (ImGui.InvisibleButton("##closeBtn", new Vector2(18f, 18f)))
-                _isVisible = false;
-            bool hoverClose = ImGui.IsItemHovered();
-            if (hoverClose) dl.AddRectFilled(closeTL, closeTL + new Vector2(18f, 18f), 0x66FF4444);
-            dl.AddText(closeTL + new Vector2(4f, 2f), hoverClose ? 0xFFFFFFFF : 0x88AAAACC, "x");
+                ImGui.SetCursorScreenPos(tl);
+                if (ImGui.InvisibleButton($"##sort{(int)m}", sz))
+                {
+                    Config.CurrentMeter = m;
+                    _plugin.SaveConfig();
+                }
+
+                if (ImGui.IsItemHovered())
+                {
+                    // Underline rather than a fill: the point of the meter is to
+                    // not draw boxes at people.
+                    dl.AddLine(new Vector2(tl.X, tl.Y + sz.Y - 1f),
+                               new Vector2(tl.X + sz.X, tl.Y + sz.Y - 1f),
+                               m == Config.CurrentMeter ? 0xFFFFFFFFu : 0xB0FFFFFFu, 1.5f);
+                    ImGui.SetTooltip("Sort by " + m.DisplayName());
+                }
+                else if (m == Config.CurrentMeter)
+                {
+                    dl.AddLine(new Vector2(tl.X, tl.Y + sz.Y - 1f),
+                               new Vector2(tl.X + sz.X, tl.Y + sz.Y - 1f),
+                               0x66FFFFFFu, 1.5f);
+                }
+            }
         }
 
-        // Restore cursor to end of header so DrawToolbar renders immediately below it
+        // Restore cursor to the end of the header so the body follows it directly
         ImGui.SetCursorScreenPos(new Vector2(_imgOrigin.X, _imgOrigin.Y + _headerH));
     }
 
@@ -477,153 +426,6 @@ public sealed class MainWindow : IDisposable
         0xFFC864FFu, // pink
     };
 
-    private void DrawGraphBody()
-    {
-        _frameSession = GetDisplaySession();
-        var session   = _frameSession;
-        var bodyTL    = ImGui.GetCursorScreenPos();
-        var avail     = ImGui.GetContentRegionAvail();
-        // Leave room for the window border at the bottom.
-        var bodySize  = new Vector2(avail.X, Math.Max(80f, avail.Y));
-        var dl        = ImGui.GetWindowDrawList();
-
-        dl.AddRectFilled(bodyTL, bodyTL + bodySize, 0xFF14101A);
-
-        if (session == null || session.Combatants.Count == 0)
-        {
-            var msg = "No data to graph.";
-            var sz  = ImGui.CalcTextSize(msg);
-            dl.AddText(bodyTL + (bodySize - sz) * 0.5f, 0xFF808080, msg);
-            ImGui.Dummy(bodySize);
-            return;
-        }
-
-        var dur = session.DurationSeconds;
-        if (dur < 1.0)
-        {
-            var msg = "Fight too short to graph (need ≥ 1s).";
-            var sz  = ImGui.CalcTextSize(msg);
-            dl.AddText(bodyTL + (bodySize - sz) * 0.5f, 0xFF808080, msg);
-            ImGui.Dummy(bodySize);
-            return;
-        }
-
-        var metric = Config.CurrentMeter;
-
-        // Only metrics with per-event time data are graphable. Others can be
-        // added later by tracking DamageTakenEvents / OverhealEvents.
-        bool isDamageBased = metric == MeterType.DamageDealt || metric == MeterType.DPS;
-        bool isHealBased   = metric == MeterType.HealingDone || metric == MeterType.HPS;
-        if (!isDamageBased && !isHealBased)
-        {
-            var msg = $"Graph not supported for '{metric.DisplayName()}' yet.\nPick Damage Dealt / DPS / Healing Done / HPS.";
-            var sz  = ImGui.CalcTextSize(msg);
-            dl.AddText(bodyTL + (bodySize - sz) * 0.5f, 0xFFA0A0A0, msg);
-            ImGui.Dummy(bodySize);
-            return;
-        }
-        bool isRateMetric = metric == MeterType.DPS || metric == MeterType.HPS;
-
-        // Pick top-8 combatants by total of the selected metric.
-        var combatants = session.Combatants.Values
-            .Where(c => (isDamageBased ? c.TotalDamageDealt : c.TotalHealingDone) > 0)
-            .OrderByDescending(c => c.GetValue(metric, dur))
-            .Take(8)
-            .ToList();
-
-        if (combatants.Count == 0)
-        {
-            var msg = "No combatants with " + (isDamageBased ? "damage" : "healing") + " yet.";
-            var sz  = ImGui.CalcTextSize(msg);
-            dl.AddText(bodyTL + (bodySize - sz) * 0.5f, 0xFF808080, msg);
-            ImGui.Dummy(bodySize);
-            return;
-        }
-
-        // Plot region.
-        const float PadL = 50f, PadR = 12f, PadT = 28f, PadB = 22f;
-        var plotTL    = bodyTL + new Vector2(PadL, PadT);
-        var plotSize  = new Vector2(bodySize.X - PadL - PadR, bodySize.Y - PadT - PadB);
-        if (plotSize.X < 40 || plotSize.Y < 40)
-        {
-            ImGui.Dummy(bodySize);
-            return;
-        }
-
-        // Sample the plot at one bin per pixel (capped) so lines stay smooth at
-        // any window width without doing more work than there are pixels.
-        int nBins = Math.Clamp((int)plotSize.X, 32, 400);
-
-        // Build series; track global max for the Y scale.
-        var series = new List<(CombatantData c, double[] vals, uint color)>();
-        double maxV = 0;
-        for (int i = 0; i < combatants.Count; i++)
-        {
-            var c    = combatants[i];
-            var arr  = ComputeSeries(c, isDamageBased, isRateMetric, dur, nBins);
-            var hi   = 0.0;
-            for (int k = 0; k < arr.Length; k++) if (arr[k] > hi) hi = arr[k];
-            if (hi > maxV) maxV = hi;
-            series.Add((c, arr, GraphLineColors[i % GraphLineColors.Length]));
-        }
-        if (maxV <= 0) maxV = 1;
-
-        // Y-axis grid + labels.
-        const int yTicks = 4;
-        for (int i = 0; i <= yTicks; i++)
-        {
-            var frac = (float)i / yTicks;
-            var y    = plotTL.Y + plotSize.Y * (1f - frac);
-            var v    = (long)(maxV * frac);
-            uint gridColor = i == 0 ? 0xFF40304Cu : 0xFF2A2030u;
-            dl.AddLine(new Vector2(plotTL.X, y), new Vector2(plotTL.X + plotSize.X, y), gridColor);
-            var label = FormatNumber(v) + (isRateMetric ? "/s" : "");
-            var lsz   = ImGui.CalcTextSize(label);
-            dl.AddText(new Vector2(plotTL.X - 4 - lsz.X, y - lsz.Y * 0.5f), 0xFFA0A0A0, label);
-        }
-
-        // X-axis labels (5 ticks).
-        for (int i = 0; i <= 4; i++)
-        {
-            var x = plotTL.X + plotSize.X * i / 4;
-            var t = dur * i / 4;
-            int s = (int)t;
-            var label = $"{s / 60}:{s % 60:D2}";
-            var lsz   = ImGui.CalcTextSize(label);
-            dl.AddText(new Vector2(x - lsz.X * 0.5f, plotTL.Y + plotSize.Y + 4), 0xFFA0A0A0, label);
-        }
-
-        // Plot lines.
-        foreach (var (c, vals, color) in series)
-        {
-            var prev = new Vector2(plotTL.X, plotTL.Y + plotSize.Y);
-            for (int i = 0; i < nBins; i++)
-            {
-                var x = plotTL.X + plotSize.X * ((float)(i + 1) / nBins);
-                var y = plotTL.Y + plotSize.Y * (1f - (float)(vals[i] / maxV));
-                dl.AddLine(prev, new Vector2(x, y), color, 1.8f);
-                prev = new Vector2(x, y);
-            }
-        }
-
-        // Legend strip across the top of the plot.
-        var legX = bodyTL.X + PadL;
-        var legY = bodyTL.Y + 6;
-        const float swatch = 12f;
-        foreach (var (c, _, color) in series)
-        {
-            var name  = c.DisplayName(false, initialsOnly: true);
-            var label = $"{name}  {FormatNumber((long)c.GetValue(metric, dur))}";
-            var lsz   = ImGui.CalcTextSize(label);
-            if (legX + swatch + 4 + lsz.X + 12 > bodyTL.X + bodySize.X) break;
-            dl.AddRectFilled(new Vector2(legX, legY + 2),
-                             new Vector2(legX + swatch, legY + swatch + 2), color);
-            dl.AddText(new Vector2(legX + swatch + 4, legY), 0xFFFFFFFF, label);
-            legX += swatch + 4 + lsz.X + 12;
-        }
-
-        ImGui.Dummy(bodySize);
-    }
 
     // Returns the cumulative value of the selected metric at nBins evenly-spaced
     // time samples from 0..dur. For rate metrics (DPS / HPS), divides by elapsed.
@@ -790,9 +592,112 @@ public sealed class MainWindow : IDisposable
         ImGui.EndTable();
     }
 
+
+
+    /// <summary>
+    /// Context rules that hide the meter without touching its visibility toggle:
+    /// out of combat, outside instanced content, or in PvP. Kept separate from
+    /// _isVisible so that turning it back on does not fight the user's own
+    /// /dm state.
+    /// </summary>
+    /// Whether group headers should draw for a given number of groups. One group
+    /// needs no heading; the option exists because someone may still want the
+    /// label and the collapse control.
+    private bool ShowHeadersFor(int groupCount)
+        => Config.ShowGroupHeaders
+           && !(Config.AutoHideSoloGroupHeader && groupCount <= 1);
+
+    /// Bound by a duty. Three flags cover it — the game sets different ones for
+    /// different content types, and checking only BoundByDuty misses some.
+    private static bool InInstance()
+        => Plugin.Condition[ConditionFlag.BoundByDuty]
+        || Plugin.Condition[ConditionFlag.BoundByDuty56]
+        || Plugin.Condition[ConditionFlag.BoundByDuty95];
+
+    /// Seconds to wait before an auto-hide rule takes effect. Never means "do
+    /// not hide on combat state", but an empty meter still has nothing to show,
+    /// so it reads as no delay rather than no hiding.
+    private double HideGraceSeconds() => Config.HideOutOfCombat switch
+    {
+        HideDelay.After10s    => 10,
+        HideDelay.After30s    => 30,
+        _                     => 0,
+    };
+
+    private bool HiddenByContext()
+    {
+        // The demo exists to be looked at while none of these hold, so it wins.
+        if (Config.DemoCombatants > 0) return false;
+
+        // Exactly one context applies at a time, so this is a switch, not a set
+        // of independent hide rules that could contradict each other.
+        if (Plugin.ClientState.IsPvP)
+        {
+            if (!Config.ShowInPvP) return true;
+        }
+        else if (InInstance())
+        {
+            if (!Config.ShowInInstances) return true;
+        }
+        else
+        {
+            if (!Config.ShowInOpenWorld) return true;
+        }
+
+        // Nothing to show: no session at all, or one nobody has landed a hit in.
+        // Shares the out-of-combat delay so an empty meter lingers exactly as
+        // long as a finished pull does.
+        if (Config.HideWhenEmpty)
+        {
+            var session = GetDisplaySession();
+            bool empty  = session == null || session.Combatants.Count == 0;
+
+            if (!empty)
+            {
+                _emptySince = null;
+            }
+            else
+            {
+                _emptySince ??= DateTime.UtcNow;
+                if ((DateTime.UtcNow - _emptySince.Value).TotalSeconds >= HideGraceSeconds())
+                    return true;
+            }
+        }
+
+        if (Config.HideOutOfCombat != HideDelay.Never)
+        {
+            if (Plugin.Condition[ConditionFlag.InCombat])
+            {
+                _leftCombatAt = null;
+            }
+            else
+            {
+                // Start the clock on the first frame out of combat, so the delay
+                // is measured from the end of the pull rather than from whenever
+                // this happens to be polled.
+                _leftCombatAt ??= DateTime.UtcNow;
+
+                if ((DateTime.UtcNow - _leftCombatAt.Value).TotalSeconds >= HideGraceSeconds())
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
     private CombatSession? GetDisplaySession()
     {
+        // Demo outranks everything: it exists precisely so you can judge
+        // placement without waiting for a pull.
+        if (Config.DemoCombatants > 0)
+        {
+            if (_demoStart == DateTime.MinValue) _demoStart = DateTime.UtcNow;
+            return DemoSession.Build(Config.DemoCombatants,
+                                     (DateTime.UtcNow - _demoStart).TotalSeconds);
+        }
+        _demoStart = DateTime.MinValue;
+
         // A pinned history session always wins — the user asked for that one.
         if (_plugin._historyWindow.PinnedSession is { } pinned) return pinned;
 

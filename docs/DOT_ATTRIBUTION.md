@@ -40,28 +40,30 @@ This is the same *class* of hook the plugin already uses twice. Dalamud itself,
 DelvUI, WrathCombo, TrackyTrack and HaselDebug all hook this function, so it is
 ordinary practice rather than anything exotic.
 
-### The missing half
+### The packet attributes itself
 
-The tick packet names the **target** and the **amount** — never the source. On
-its own it cannot be credited to anyone.
-
-But status *applications* are already visible on the ActionEffect hook as
-`EffectKind.ApplyStatusEffectTarget` (kind 14), carrying caster, target, and the
-status id in the effect value. `DotAttribution` records those into a
-`(target, statusId) → source` map, and a tick becomes a lookup.
+The tick packet carries the source actor directly, which was not obvious until it
+was read off a live capture:
 
 ```
-ActionEffect  kind=14  caster=Bard target=Boss value=1200   → remember
-ActorControl  0x17     target=Boss status=1200 amount=4321  → credit Bard
+cat=0x17  target=268631352  a1=2105  a2=14  a3=2105  a4=268763580
+                 ^ receives              ^ amount      ^ SOURCE actor
 ```
+
+`a4` cross-references against the combat log as a caster, so no status
+bookkeeping is needed to credit a tick. `DotAttribution` — a
+`(target, statusId) -> applier` map built before this was known — survives only
+as a fallback for when `a4` does not resolve to a tracked combatant.
 
 ## Verification — do this before trusting it
 
-The argument layout in `HandlePeriodicTick` is **a guess**. It assumes
-`arg1 = effect kind` (with `HotEffectKind = 4` meaning heal), `arg2 = status id`,
-`arg3 = amount`. None of that has been confirmed against a live packet.
+The layout in `HandlePeriodicTick` was read off live healing ticks:
+`arg1 = amount`, `arg2 = kind`, `arg3 = amount again`, `arg4 = source actor`.
 
-Getting `arg1` wrong does not merely lose heals — it books them as **damage**.
+**The damage side is still unconfirmed.** Every captured sample so far has been a
+heal (`arg2 = 14`), so `HotEffectKind = 14` is inferred from one side only and
+"anything else is damage" is an assumption. Getting `arg2` wrong does not merely
+lose heals — it books them as **damage**.
 
 1. Settings → Window → *Other players' DoTs* → tick **Log raw DoT packets**.
    Leave **Credit DoT and HoT ticks** off.
@@ -71,23 +73,23 @@ Getting `arg1` wrong does not merely lose heals — it books them as **damage**.
    ```
    MinimalMeter: ActorControl 0x17 target=... arg1=... arg2=... arg3=...
    ```
-4. Check which argument holds `1200`, and which holds a number that looks like
-   tick damage. If they are not `arg2` and `arg3`, correct the two lines in
-   `CombatTracker.HandlePeriodicTick` — they are marked and adjacent.
-5. Apply a HoT to an ally and confirm `arg1` differs from the DoT case; that
-   value is `HotEffectKind`.
-6. Turn logging off, turn crediting on, and sanity-check a Bard or Summoner
-   against a known parse — and a healer's HPS against theirs.
+4. Compare `a2` against the healing case (`14`). A different value confirms it is
+   the heal/damage discriminator; the same value means the assumption is wrong
+   and `HotEffectKind` needs rethinking.
+5. Confirm `a4` is *your* entity id, with `target` being the dummy — the reverse
+   of the healing case, where `target` was the healed player.
+6. Turn logging off and sanity-check a Bard or Summoner against a known parse.
+
+Note the raw log caps at 12 lines **per category**, with `0x17` exempt — an
+earlier global cap let `0x93C` (hundreds of packets a minute) crowd out the
+category being verified.
 
 ## Known limitations
 
-- **Duplicate statuses.** FFXIV tracks one instance of a status per source per
-  target, but the tick packet carries no source, so two players landing the
-  *same* DoT on one target are indistinguishable. The later applier takes credit
-  for both. Rare outside stacked duplicate jobs.
-- **Applications missed before you arrived.** A DoT applied before the meter
-  started, or before you zoned in, has no recorded application — those ticks are
-  dropped rather than mis-credited.
+- **Fallback attribution is lossy.** When `a4` resolves, credit is exact. When it
+  does not and the status map is consulted instead, two players landing the same
+  DoT on one target are indistinguishable, and a DoT applied before the meter
+  started has no recorded application at all.
 - **HoT ticks share the packet.** Category `0x17` carries both, distinguished by
   `arg1`; heals are credited to `TotalHealingDone` and damage to
   `TotalDamageDealt` through the same attribution map. Verify `HotEffectKind`

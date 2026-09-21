@@ -12,6 +12,8 @@ namespace MinimalMeter.Windows;
 public sealed class SettingsWindow : IDisposable
 {
     private bool _isVisible;
+    private int  _sizePct;
+    private bool _sizePctEditing;
     public bool IsVisible { get => _isVisible; set => _isVisible = value; }
 
     private readonly Plugin _plugin;
@@ -42,6 +44,8 @@ public sealed class SettingsWindow : IDisposable
             if (ImGui.BeginTabItem("Bar Colors")) { DrawColorsTab();     ImGui.EndTabItem(); }
             if (ImGui.BeginTabItem("Window"))     { DrawWindowTab();     ImGui.EndTabItem(); }
             if (ImGui.BeginTabItem("History"))    { DrawHistoryTab();    ImGui.EndTabItem(); }
+            if (ImGui.BeginTabItem("Preview"))    { DrawPreviewTab();    ImGui.EndTabItem(); }
+            if (ImGui.BeginTabItem("Developer"))  { DrawDeveloperTab();  ImGui.EndTabItem(); }
             ImGui.EndTabBar();
         }
 
@@ -54,23 +58,17 @@ public sealed class SettingsWindow : IDisposable
         ImGui.TextColored(new Vector4(1f, 0.8f, 0.3f, 1f), "Name Display");
         ImGui.Separator();
 
-        var showFull = Config.ShowFullName;
-        if (ImGui.Checkbox("Full player names", ref showFull))
+        // One choice, not two checkboxes wired to the same boolean with a note
+        // explaining why they fight each other.
+        if (ImGui.RadioButton("Full names", Config.ShowFullName))
         {
-            Config.ShowFullName = showFull;
+            Config.ShowFullName = true;
             Save();
         }
-
-        using (new DisabledScope(Config.ShowFullName))
+        ImGui.SameLine();
+        if (ImGui.RadioButton("Initials only (T.M.)", !Config.ShowFullName))
         {
-            ImGui.SameLine(200);
-            ImGui.TextDisabled("(disabled when full names on)");
-        }
-
-        var initOnly = !Config.ShowFullName;
-        if (ImGui.Checkbox("Initials only  (e.g. T.M.)", ref initOnly))
-        {
-            Config.ShowFullName = !initOnly;
+            Config.ShowFullName = false;
             Save();
         }
 
@@ -81,21 +79,77 @@ public sealed class SettingsWindow : IDisposable
             Save();
         }
 
-        var showIcon = Config.ShowJobIcon;
-        if (ImGui.Checkbox("Show job icon", ref showIcon))
+        ImGui.TextDisabled("Job column");
+        foreach (JobDisplay jd in Enum.GetValues<JobDisplay>())
         {
-            Config.ShowJobIcon = showIcon;
+            var label = jd switch
+            {
+                JobDisplay.None => "Hidden",
+                JobDisplay.Icon => "Icon",
+                JobDisplay.Text => "Text (WAR, WHM)",
+                _               => jd.ToString(),
+            };
+            if (ImGui.RadioButton(label, Config.JobColumn == jd))
+            {
+                Config.JobColumn = jd;
+                Save();
+            }
+            ImGui.SameLine();
+        }
+        ImGui.NewLine();
+
+        ImGui.Spacing();
+        ImGui.TextColored(new Vector4(1f, 0.8f, 0.3f, 1f), "Appearance");
+        ImGui.Separator();
+
+        var panelAlpha = Config.PanelAlpha < 0f ? 1f : Config.PanelAlpha;
+        ImGui.SetNextItemWidth(200);
+        if (ImGui.SliderFloat("Background opacity", ref panelAlpha, 0.0f, 1.0f, "%.2f"))
+        {
+            Config.PanelAlpha = panelAlpha;
             Save();
+        }
+        ImGui.TextWrapped(
+            "0 leaves only bars and text over the game. Text shadow below is what " +
+            "keeps names readable once the panel is gone.");
+
+        var barAlpha = Config.BarAlpha;
+        ImGui.SetNextItemWidth(200);
+        if (ImGui.SliderFloat("Bar opacity", ref barAlpha, 0.0f, 1.0f, "%.2f"))
+        {
+            Config.BarAlpha = barAlpha;
+            Save();
+        }
+
+        var shadow = Config.TextShadow;
+        if (ImGui.Checkbox("Text outline", ref shadow))
+        {
+            Config.TextShadow = shadow;
+            Save();
+        }
+        ImGui.TextWrapped(
+            "Surrounds every glyph rather than darkening one side, so names stay " +
+            "readable over bright ground effects without raising the background.");
+
+        if (Config.TextShadow)
+        {
+            var strength = Config.OutlineStrength <= 0f ? 1f : Config.OutlineStrength;
+            ImGui.SetNextItemWidth(200);
+            if (ImGui.SliderFloat("Outline strength", ref strength, 0.25f, 2.0f, "%.2f"))
+            {
+                Config.OutlineStrength = strength;
+                Save();
+            }
         }
 
         ImGui.Spacing();
         ImGui.TextColored(new Vector4(1f, 0.8f, 0.3f, 1f), "Values");
         ImGui.Separator();
 
-        var showVal = Config.ShowFullValues;
-        if (ImGui.Checkbox("Show full numeric value", ref showVal))
+        var abbrev = Config.AbbreviateValues;
+        if (ImGui.Checkbox("Abbreviate numbers (12.4k rather than 12,431)", ref abbrev))
         {
-            Config.ShowFullValues = showVal;
+            Config.AbbreviateValues = abbrev;
             Save();
         }
 
@@ -107,16 +161,77 @@ public sealed class SettingsWindow : IDisposable
         }
 
         ImGui.Spacing();
-        ImGui.TextColored(new Vector4(1f, 0.8f, 0.3f, 1f), "Row");
-        ImGui.Separator();
+    }
 
-        var rowH = Config.RowHeight;
-        ImGui.SetNextItemWidth(200);
-        if (ImGui.SliderFloat("Row height (px)", ref rowH, 16f, 40f))
+    // ── Preview tab ───────────────────────────────────────────────────────────
+    private void DrawPreviewTab()
+    {
+        ImGui.TextColored(new Vector4(1f, 0.8f, 0.3f, 1f), "Placement preview");
+        ImGui.Separator();
+        ImGui.TextWrapped(
+            "Fills the meter with synthetic combatants so you can position and " +
+            "size it without being in content. Values climb like a real pull, and " +
+            "healers carry healing so the optional columns show up where they " +
+            "would in a real party.");
+
+        ImGui.Spacing();
+
+        foreach (var (label, count) in DemoSession.Presets)
         {
-            Config.RowHeight = rowH;
+            if (ImGui.RadioButton(label, Config.DemoCombatants == count))
+            {
+                Config.DemoCombatants = count;
+                Save();
+            }
+        }
+        if (ImGui.RadioButton("Off", Config.DemoCombatants == 0))
+        {
+            Config.DemoCombatants = 0;
             Save();
         }
+
+        if (Config.DemoCombatants > 0)
+        {
+            ImGui.Spacing();
+            ImGui.TextColored(new Vector4(1f, 0.5f, 0.3f, 1f),
+                "Preview is active — the meter shows synthetic data, and every " +
+                "auto-hide rule is suspended so you can position it anywhere.");
+        }
+    }
+
+    // ── Developer tab ─────────────────────────────────────────────────────────
+    private void DrawDeveloperTab()
+    {
+        ImGui.TextColored(new Vector4(1f, 0.8f, 0.3f, 1f), "Tick attribution");
+        ImGui.Separator();
+
+        var dotAttr = Config.EnableDotAttribution;
+        if (ImGui.Checkbox("Credit DoT and HoT ticks via ActorControl", ref dotAttr))
+        {
+            Config.EnableDotAttribution = dotAttr;
+            Save();
+        }
+        ImGui.TextWrapped(
+            "Hooks ActorControl category 0x17, where damage- and healing-over-" +
+            "time ticks arrive. The packet names its own source actor, so ticks " +
+            "are credited directly. This is the only way to see other players' " +
+            "DoTs and HoTs without IINACT.");
+
+        ImGui.Spacing();
+        ImGui.TextColored(new Vector4(1f, 0.8f, 0.3f, 1f), "Diagnostics");
+        ImGui.Separator();
+
+        var logDot = Config.LogDotPackets;
+        if (ImGui.Checkbox("Log raw ActorControl packets", ref logDot))
+        {
+            Config.LogDotPackets = logDot;
+            Save();
+        }
+        ImGui.TextWrapped(
+            "Writes every ActorControl category and its arguments to the Dalamud " +
+            "log: 12 lines per category, with 0x17 (the tick packets) uncapped. " +
+            "Toggling it off and on starts a fresh capture. Noisy in combat, so " +
+            "leave it off unless you are checking something.");
     }
 
     // ── Filters tab ───────────────────────────────────────────────────────────
@@ -139,6 +254,24 @@ public sealed class SettingsWindow : IDisposable
             Save();
         }
 
+        var byAlliance = Config.GroupByAlliance;
+        if (ImGui.Checkbox("Split non-party players by alliance", ref byAlliance))
+        {
+            Config.GroupByAlliance = byAlliance;
+            Save();
+        }
+        ImGui.TextWrapped(
+            "In alliance raids, shows Alliance A / B / C instead of one Friendly " +
+            "lump. Needs group headers on to be legible, and does nothing outside " +
+            "alliance content.");
+
+        var autoHideSolo = Config.AutoHideSoloGroupHeader;
+        if (ImGui.Checkbox("Hide the group header when there is only one group", ref autoHideSolo))
+        {
+            Config.AutoHideSoloGroupHeader = autoHideSolo;
+            Save();
+        }
+
         var showGroupHeaders = Config.ShowGroupHeaders;
         if (ImGui.Checkbox("Show group accordion headers", ref showGroupHeaders))
         {
@@ -147,15 +280,9 @@ public sealed class SettingsWindow : IDisposable
         }
 
         ImGui.Spacing();
-        ImGui.TextColored(new Vector4(1f, 0.8f, 0.3f, 1f), "Header");
+        ImGui.TextColored(new Vector4(1f, 0.8f, 0.3f, 1f), "Total row");
         ImGui.Separator();
 
-        var showTitleBar = Config.ShowTitleBar;
-        if (ImGui.Checkbox("Show title bar (\"DAMAGE METER\" strip)", ref showTitleBar))
-        {
-            Config.ShowTitleBar = showTitleBar;
-            Save();
-        }
 
         var showTotal = Config.ShowEncounterTotal;
         if (ImGui.Checkbox("Show total stat line in encounter header", ref showTotal))
@@ -224,6 +351,13 @@ public sealed class SettingsWindow : IDisposable
         ImGui.TextColored(new Vector4(1f, 0.8f, 0.3f, 1f), "Extra row figures");
         ImGui.Separator();
 
+        var showDmg = Config.ShowDamageValue;
+        if (ImGui.Checkbox("Total damage", ref showDmg))
+        {
+            Config.ShowDamageValue = showDmg;
+            Save();
+        }
+
         var showDps = Config.ShowDps;
         if (ImGui.Checkbox("Damage per second", ref showDps))
         {
@@ -238,12 +372,34 @@ public sealed class SettingsWindow : IDisposable
             Save();
         }
 
+        var showTaken = Config.ShowDamageTaken;
+        if (ImGui.Checkbox("Damage taken", ref showTaken))
+        {
+            Config.ShowDamageTaken = showTaken;
+            Save();
+        }
+
+        var showAvoid = Config.ShowAvoidable;
+        if (ImGui.Checkbox("Avoidable damage taken", ref showAvoid))
+        {
+            Config.ShowAvoidable = showAvoid;
+            Save();
+        }
+
+        var showOverheal = Config.ShowOverhealing;
+        if (ImGui.Checkbox("Overhealing", ref showOverheal))
+        {
+            Config.ShowOverhealing = showOverheal;
+            Save();
+        }
+
         var showHeal = Config.ShowHealingValue;
         if (ImGui.Checkbox("Total healing", ref showHeal))
         {
             Config.ShowHealingValue = showHeal;
             Save();
         }
+        ImGui.TextDisabled("A column is skipped when the selected metric already shows it.");
         ImGui.TextWrapped(
             "Healing figures are drawn in green, and only for combatants who " +
             "actually healed — a party of DPS keeps the row it had.");
@@ -255,91 +411,74 @@ public sealed class SettingsWindow : IDisposable
                 "enabled — HoT ticks are invisible to the meter without it.");
         }
 
+
         ImGui.Spacing();
-        ImGui.TextColored(new Vector4(1f, 0.5f, 0.3f, 1f), "Other players' DoTs (experimental)");
+        ImGui.TextColored(new Vector4(1f, 0.8f, 0.3f, 1f), "Meter");
         ImGui.Separator();
 
-        var dotAttr = Config.EnableDotAttribution;
-        if (ImGui.Checkbox("Credit DoT and HoT ticks via ActorControl", ref dotAttr))
+        ImGui.SetNextItemWidth(220);
+        if (ImGui.BeginCombo("Metric", Config.CurrentMeter.DisplayName()))
         {
-            Config.EnableDotAttribution = dotAttr;
+            foreach (MeterType mt in Enum.GetValues<MeterType>())
+            {
+                if (ImGui.Selectable(mt.DisplayName(), mt == Config.CurrentMeter))
+                {
+                    Config.CurrentMeter = mt;
+                    Save();
+                }
+            }
+            ImGui.EndCombo();
+        }
+        ImGui.TextWrapped("Also sets the sort order.");
+
+        if (Plugin.Instance?._historyWindow.PinnedSession != null)
+        {
+            if (ImGui.Button("\u2190 Return to live"))
+                Plugin.Instance._historyWindow.ClearPin();
+            ImGui.SameLine();
+            ImGui.TextDisabled("(a past session is pinned)");
+        }
+
+        ImGui.Spacing();
+        ImGui.TextColored(new Vector4(1f, 0.8f, 0.3f, 1f), "Sizing");
+        ImGui.Separator();
+
+        // Buffered: re-deriving from config each frame clamped the first digit
+        // you typed (1 -> 50) and threw the rest away, leaving only the step
+        // buttons usable. Clamp on commit, not on every keystroke.
+        if (!_sizePctEditing)
+            _sizePct = (int)MathF.Round((Config.UiScale <= 0f ? 1f : Config.UiScale) * 100f);
+
+        ImGui.SetNextItemWidth(200);
+        ImGui.InputInt("Size (%)", ref _sizePct, 5, 25);
+        _sizePctEditing = ImGui.IsItemActive();
+        if (ImGui.IsItemDeactivatedAfterEdit())
+        {
+            _sizePct = Math.Clamp(_sizePct, 50, 250);
+            Config.UiScale = _sizePct / 100f;
             Save();
+        }
+        ImGui.SameLine();
+        ImGui.TextDisabled("50-250");
+        ImGui.TextWrapped(
+            "Rows, text, the job icon and padding all scale from this, so the " +
+            "meter grows or shrinks as one piece.");
+
+        ImGui.TextDisabled("Grow direction");
+        foreach (GrowDirection gd in Enum.GetValues<GrowDirection>())
+        {
+            var label = gd == GrowDirection.Up ? "Upward (pin bottom edge)"
+                                               : "Downward (pin top edge)";
+            if (ImGui.RadioButton(label, Config.Grow == gd))
+            {
+                Config.Grow = gd;
+                Save();
+            }
         }
         ImGui.TextWrapped(
-            "Hooks the packet DoT and HoT ticks actually arrive on (ActorControl " +
-            "category 0x17 carries both), and credits them to whoever applied the " +
-            "status. This is the only way to see other players' damage and healing " +
-            "over time without IINACT.");
-        ImGui.TextColored(new Vector4(1f, 0.5f, 0.3f, 1f),
-            "UNVERIFIED: the packet's argument layout has not been confirmed in " +
-            "game. Verify with the log option below before trusting the numbers.");
+            "Height follows the number of combatants either way; this picks which " +
+            "edge stays put as rows appear.");
 
-        var logDot = Config.LogDotPackets;
-        if (ImGui.Checkbox("Log raw DoT packets to the Dalamud log", ref logDot))
-        {
-            Config.LogDotPackets = logDot;
-            Save();
-        }
-
-        ImGui.Spacing();
-        ImGui.TextColored(new Vector4(1f, 0.8f, 0.3f, 1f), "Style");
-        ImGui.Separator();
-
-        foreach (WindowStyle style in Enum.GetValues<WindowStyle>())
-        {
-            var selected = Config.Style == style;
-            if (ImGui.RadioButton(style.ToString(), selected))
-            {
-                Config.Style = style;
-                Save();
-            }
-        }
-
-        if (Config.Style.IsTransparent())
-        {
-            ImGui.Spacing();
-            ImGui.TextColored(new Vector4(1f, 0.8f, 0.3f, 1f), "Transparent");
-            ImGui.Separator();
-
-            var barAlpha = Config.BarAlpha;
-            ImGui.SetNextItemWidth(200);
-            if (ImGui.SliderFloat("Bar opacity", ref barAlpha, 0.05f, 1.0f, "%.2f"))
-            {
-                Config.BarAlpha = barAlpha;
-                Save();
-            }
-
-            var shadow = Config.TextShadow;
-            if (ImGui.Checkbox("Text shadow (keeps text readable over the game)", ref shadow))
-            {
-                Config.TextShadow = shadow;
-                Save();
-            }
-
-            var autoHide = Config.AutoHideToolbar;
-            if (ImGui.Checkbox("Hide toolbar until hovered", ref autoHide))
-            {
-                Config.AutoHideToolbar = autoHide;
-                Save();
-            }
-        }
-
-        ImGui.Spacing();
-        ImGui.TextColored(new Vector4(1f, 0.8f, 0.3f, 1f), "Behaviour");
-        ImGui.Separator();
-
-        var grow = Config.GrowUpward;
-        if (ImGui.Checkbox("Grow upward (pin the bottom edge)", ref grow))
-        {
-            Config.GrowUpward = grow;
-            Save();
-        }
-        ImGui.TextWrapped(
-            "Height follows the number of combatants and the bottom edge stays " +
-            "put, so rows appear above rather than scrolling. Width is still " +
-            "draggable.");
-
-        if (Config.GrowUpward)
         {
             var maxRows = Config.MaxGrowRows;
             ImGui.SetNextItemWidth(200);
@@ -354,6 +493,79 @@ public sealed class SettingsWindow : IDisposable
         }
 
         ImGui.Spacing();
+        ImGui.TextColored(new Vector4(1f, 0.8f, 0.3f, 1f), "Auto-hide");
+        ImGui.Separator();
+        ImGui.TextWrapped("Hides the meter without touching the /dm toggle.");
+
+        // The override is easy to forget and looks exactly like these rules being
+        // broken, so say so here rather than only in the Preview tab.
+        if (Config.DemoCombatants > 0)
+        {
+            ImGui.TextColored(new Vector4(1f, 0.5f, 0.3f, 1f),
+                "Placement preview is ON — it overrides every rule below, so the " +
+                "meter stays visible everywhere until you turn it off in the " +
+                "Preview tab.");
+        }
+
+        ImGui.TextDisabled("Out of combat");
+        foreach (HideDelay hd in Enum.GetValues<HideDelay>())
+        {
+            var label = hd switch
+            {
+                HideDelay.Never       => "Never hide",
+                HideDelay.Immediately => "Immediately",
+                HideDelay.After10s    => "After 10s",
+                HideDelay.After30s    => "After 30s",
+                _                     => hd.ToString(),
+            };
+            if (ImGui.RadioButton(label, Config.HideOutOfCombat == hd))
+            {
+                Config.HideOutOfCombat = hd;
+                Save();
+            }
+            ImGui.SameLine();
+        }
+        ImGui.NewLine();
+
+        var hideEmpty = Config.HideWhenEmpty;
+        if (ImGui.Checkbox("Hide when there is no encounter data", ref hideEmpty))
+        {
+            Config.HideWhenEmpty = hideEmpty;
+            Save();
+        }
+        ImGui.TextWrapped(
+            "Uses the same delay as above, so an empty meter lingers exactly as " +
+            "long as a finished pull.");
+
+        ImGui.Spacing();
+        ImGui.TextDisabled("Show the meter in");
+
+        var inst = Config.ShowInInstances;
+        if (ImGui.Checkbox("Instances (dungeons, trials, raids)", ref inst))
+        {
+            Config.ShowInInstances = inst;
+            Save();
+        }
+
+        var pvp = Config.ShowInPvP;
+        if (ImGui.Checkbox("PvP", ref pvp))
+        {
+            Config.ShowInPvP = pvp;
+            Save();
+        }
+
+        var open = Config.ShowInOpenWorld;
+        if (ImGui.Checkbox("Open world (overworld, cities, FATEs)", ref open))
+        {
+            Config.ShowInOpenWorld = open;
+            Save();
+        }
+
+        ImGui.TextDisabled("Placement preview overrides all of these.");
+
+        ImGui.Spacing();
+        ImGui.TextColored(new Vector4(1f, 0.8f, 0.3f, 1f), "Behaviour");
+        ImGui.Separator();
 
         var locked = Config.LockWindow;
         if (ImGui.Checkbox("Lock window (no move / resize)", ref locked))
@@ -362,13 +574,6 @@ public sealed class SettingsWindow : IDisposable
             Save();
         }
 
-        var opacity = Config.Opacity;
-        ImGui.SetNextItemWidth(200);
-        if (ImGui.SliderFloat("Opacity", ref opacity, 0.2f, 1f))
-        {
-            Config.Opacity = opacity;
-            Save();
-        }
     }
 
     // ── History tab ───────────────────────────────────────────────────────────
