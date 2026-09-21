@@ -27,13 +27,9 @@ your own party named by the alliance it is in rather than just "Party":
 
 ![Alliance raid](images/screenshots/alliance-raid.png)
 
-Crystalline Conflict:
-
-![Crystalline Conflict](images/screenshots/crystalline-conflict.png)
-
-Frontline, with groups past the visible ones collapsed:
-
-![Frontline](images/screenshots/frontline.png)
+PvP looks like these too: in Frontline your side is three alliances, and in
+Crystalline Conflict it is a single party — the opposing teams are filed as
+enemies and hidden by default.
 
 </details>
 
