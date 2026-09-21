@@ -482,14 +482,15 @@ public sealed class SettingsWindow : IDisposable
         {
             var maxRows = Config.MaxGrowRows;
             ImGui.SetNextItemWidth(200);
-            if (ImGui.SliderInt("Max rows", ref maxRows, 1, 24))
+            if (ImGui.SliderInt("Max rows", ref maxRows, 1, 72))
             {
                 Config.MaxGrowRows = maxRows;
                 Save();
             }
             ImGui.TextWrapped(
-                "8 is a full party. An alliance raid is still tracked in full — " +
-                "the window just stops growing and scrolls past this many rows.");
+                "8 is a full party, 24 an alliance raid, 72 a Frontline. Everyone is " +
+                "tracked in full either way — the window just stops growing and " +
+                "scrolls past this many rows.");
         }
 
         ImGui.Spacing();

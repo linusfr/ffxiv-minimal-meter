@@ -133,7 +133,7 @@ public sealed class Configuration : IPluginConfiguration
     public bool GrowUpward      { get; set; } = true;
     /// Ceiling for GrowUpward, counted in rows rather than pixels so it keeps
     /// its meaning when the size scale changes. Defaults to 24 so a full alliance
-    /// raid fits; lower it to keep the meter party-sized and scroll the rest.
+    /// raid fits; 72 covers Frontline, and lower keeps the meter party-sized.
     public int MaxGrowRows      { get; set; } = 24;
 
     // ── Filters ───────────────────────────────────────────────────────────────

@@ -114,7 +114,7 @@ public sealed class MainWindow : IDisposable
             // alliance raid pushes it into scrolling.
             float capH = dynHeaderH + 1f
                          + MeterCanvas.GroupOverhead(_lastGroupCount, ShowHeadersFor(_lastGroupCount))
-                         + Math.Clamp(Config.MaxGrowRows, 1, 24) * dynRowH
+                         + Math.Clamp(Config.MaxGrowRows, 1, 72) * dynRowH
                          + WinPadV;
             float autoH    = Math.Clamp(contentH, growFloor, Math.Max(growFloor, capH));
 

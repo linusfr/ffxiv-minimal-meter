@@ -1,7 +1,7 @@
 # Minimal Meter
 
-[![latest](https://img.shields.io/github/v/release/linusfr/ffxiv-minimal-meter?sort=semver&display_name=tag&label=latest&color=blue)](https://github.com/linusfr/ffxiv-minimal-meter/releases/latest)
-[![ci](https://img.shields.io/github/actions/workflow/status/linusfr/ffxiv-minimal-meter/ci.yml?branch=main&label=ci)](https://github.com/linusfr/ffxiv-minimal-meter/actions/workflows/ci.yml)
+[![latest](https://img.shields.io/github/v/release/linusfr/ffxiv-minimal-meter?sort=semver&display_name=tag&label=latest&color=blue&cacheSeconds=300)](https://github.com/linusfr/ffxiv-minimal-meter/releases/latest)
+[![ci](https://img.shields.io/github/actions/workflow/status/linusfr/ffxiv-minimal-meter/ci.yml?branch=main&label=ci&cacheSeconds=300)](https://github.com/linusfr/ffxiv-minimal-meter/actions/workflows/ci.yml)
 [![licence](https://img.shields.io/github/license/linusfr/ffxiv-minimal-meter?color=blue)](LICENSE)
 
 > A damage meter that shuts up and shows you the numbers.
@@ -11,14 +11,22 @@ along the top reminding you this is a damage meter. Minimal Meter is the same
 parser with the furniture taken out: no title bar, no toolbar, no window chrome
 — just a bar per player over the game, on a scrim as light as you like.
 
-```
- 1  SAM  Kaito Mizuhara            12.4k  31%
- 2  BLM  Tessa Varr                 9.8k  24%
- 3  WHM  Aeryn Solace  4.2k  1.1k   3.1k   8%
-                       ↑heal ↑hps   ↑dmg  ↑pct
-```
+![Minimal Meter, full party](images/screenshots/full-party.png)
 
 No ACT. No IINACT required. No browser overlay. One plugin.
+
+<details>
+<summary>More sizes</summary>
+
+Light party — the columns you enable, and nothing else:
+
+![Light party](images/screenshots/light-party.png)
+
+Alliance raid, split into groups with per-group sums in the headers:
+
+![Alliance raid](images/screenshots/alliance-raid.png)
+
+</details>
 
 ## Credit
 
@@ -66,7 +74,7 @@ IINACT is only a data source here.
 
 ### Direct download
 
-[![latest](https://img.shields.io/github/v/release/linusfr/ffxiv-minimal-meter?sort=semver&display_name=tag&label=&color=blue)](https://github.com/linusfr/ffxiv-minimal-meter/releases/latest)
+[![latest](https://img.shields.io/github/v/release/linusfr/ffxiv-minimal-meter?sort=semver&display_name=tag&label=&color=blue&cacheSeconds=300)](https://github.com/linusfr/ffxiv-minimal-meter/releases/latest)
  ← current version
 
 | | |

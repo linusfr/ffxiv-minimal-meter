@@ -56,7 +56,11 @@ public static class DemoSession
     /// </summary>
     public static CombatSession Build(int count, double elapsedSeconds)
     {
-        count = Math.Clamp(count, 1, Roster.Length);
+        // Frontline is 72, well past the hand-written roster, so anything beyond
+        // it is synthesised by cycling names onto different worlds. The point of
+        // the large presets is row count and column width under load, not
+        // plausible prosopography.
+        count = Math.Clamp(count, 1, 72);
         double elapsed = Math.Max(1.0, elapsedSeconds);
 
         var session = new CombatSession
@@ -68,7 +72,10 @@ public static class DemoSession
 
         for (int i = 0; i < count; i++)
         {
-            var m = Roster[i];
+            var m = Roster[i % Roster.Length];
+            int cycle = i / Roster.Length;
+            if (cycle > 0)
+                m = m with { World = ExtraWorlds[cycle % ExtraWorlds.Length] };
 
             // A gentle per-player wobble so bars are not perfectly static and the
             // ordering occasionally swaps, which is what you want to see when
@@ -82,11 +89,16 @@ public static class DemoSession
                 Name       = m.Name,
                 World      = m.World,
                 ClassJobId = m.JobId,
-                // Beyond a full party the rest read as alliance/bystanders, which
+                // Beyond a full party the rest read as alliance members, which
                 // is how the live grouping classifies them too.
                 Type       = i < PartySize
                     ? CombatantType.PartyMember
                     : CombatantType.FriendlyPlayer,
+
+                // Split into alliances of eight so the preview actually exercises
+                // "split non-party players by alliance" — without this every
+                // demo combatant sits at -1 and collapses into one Friendly lump.
+                AllianceIndex = i / PartySize,
 
                 TotalDamageDealt     = (long)(m.Dps * elapsed * wobble),
                 TotalHealingDone     = (long)(m.Hps * elapsed * wobble),
@@ -98,12 +110,19 @@ public static class DemoSession
         return session;
     }
 
+    /// Worlds for the synthesised entries, so a cycled name is not an exact
+    /// duplicate of the one above it.
+    private static readonly string[] ExtraWorlds =
+        { "Lich", "Moogle", "Zodiark", "Light", "Chaos", "Shadow" };
+
     /// <summary>Preset sizes, matching the content shapes worth checking.</summary>
     public static readonly (string Label, int Count)[] Presets =
     {
-        ("Solo",            1),
-        ("Light party (4)", 4),
-        ("Full party (8)",  8),
-        ("Alliance (24)",  24),
+        ("Solo",                    1),
+        ("Light party (4)",         4),
+        ("Full party (8)",          8),
+        ("Alliance (24)",          24),
+        ("Crystalline Conflict (10)", 10),
+        ("Frontline (72)",         72),
     };
 }
