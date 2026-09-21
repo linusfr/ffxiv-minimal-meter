@@ -1,10 +1,11 @@
-## 1.2.1 (2026-09-21)
+## 1.2.2 (2026-09-21)
 
 #### Bug Fixes
 
-* keep restored window geometry, and drop the total row when solo (d7c17785)
+* end of line (b6a34aaf)
+* file hostile players in PvP as enemies, not friendlies (0ba21ab4)
 
 #### Chores
 
-* run prek (1247e822)
-* pluginmaster 1.2.0 [skip ci] (ddf4e344)
+* pluginmaster 1.2.1 [skip ci] (0f36b83e)
+
