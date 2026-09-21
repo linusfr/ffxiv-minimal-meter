@@ -1,13 +1,11 @@
-## 1.1.0 (2026-09-21)
+## 1.2.0 (2026-09-21)
 
 #### Feature
 
-* chrome-free meter with fixed columns, context auto-hide and demo mode (cd965a63)
-
-#### Bug Fixes
-
-* remove old feature residue (d98b2329)
+* label your own alliance, split by alliance by default (28a5f451)
+* add screenshots (35f492dc)
 
 #### Chores
 
-* pluginmaster 1.0.1 [skip ci] (940ca673)
+* pluginmaster 1.1.0 [skip ci] (d4766a8e)
+
