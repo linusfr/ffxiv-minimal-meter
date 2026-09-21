@@ -50,10 +50,24 @@ public static class DemoSession
     /// <summary>Full party size — the boundary between Party and Friendly.</summary>
     private const int PartySize = 8;
 
+    /// <summary>Your own side in alliance content: three parties of eight.</summary>
+    private const int AllianceSize = 24;
+
     /// <summary>
     /// Build a session of <paramref name="count"/> combatants, as if the pull
     /// started <paramref name="elapsedSeconds"/> ago.
     /// </summary>
+    /// How many of a preset's combatants are on your own side. Everyone past it
+    /// is on another team, which is what makes them enemies rather than
+    /// bystanders — Crystalline Conflict is 5v5, Frontline three alliances
+    /// against two other teams.
+    private static int OwnSideFor(int count) => count switch
+    {
+        10 => 5,                       // Crystalline Conflict
+        > 24 => AllianceSize,          // Frontline and friends
+        _ => count,                    // party and alliance content: all yours
+    };
+
     public static CombatSession Build(int count, double elapsedSeconds)
     {
         // Frontline is 72, well past the hand-written roster, so anything beyond
@@ -69,6 +83,8 @@ public static class DemoSession
             ZoneName  = "Demo — placement preview",
             StartTime = DateTime.UtcNow.AddSeconds(-elapsed),
         };
+
+        int ownSide = OwnSideFor(count);
 
         for (int i = 0; i < count; i++)
         {
@@ -91,14 +107,16 @@ public static class DemoSession
                 ClassJobId = m.JobId,
                 // Beyond a full party the rest read as alliance members, which
                 // is how the live grouping classifies them too.
-                Type       = i < PartySize
-                    ? CombatantType.PartyMember
-                    : CombatantType.FriendlyPlayer,
+                Type       = i < PartySize      ? CombatantType.PartyMember
+                           : i < ownSide        ? CombatantType.FriendlyPlayer
+                                                : CombatantType.Enemy,
 
-                // Split into alliances of eight so the preview actually exercises
-                // "split non-party players by alliance" — without this every
-                // demo combatant sits at -1 and collapses into one Friendly lump.
-                AllianceIndex = i / PartySize,
+                // Mirrors what live content produces: your own side is an
+                // alliance of up to 24, which splits into three groups of eight.
+                // Anyone past that is on another team and has no alliance of
+                // yours, so they read as unaligned friendlies — which is exactly
+                // what a real Frontline shows, rather than nine alliances.
+                AllianceIndex = i < ownSide ? i / PartySize : -1,
 
                 TotalDamageDealt     = (long)(m.Dps * elapsed * wobble),
                 TotalHealingDone     = (long)(m.Hps * elapsed * wobble),

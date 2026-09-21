@@ -1136,6 +1136,14 @@ public sealed class CombatTracker : IDisposable
                 if (member.EntityId == entityId)
                     return CombatantType.PartyMember;
             }
+
+            // In PvP, a player outside your party AND outside your alliance is on
+            // another team — an enemy, not a friendly. Without this Frontline
+            // files 48 hostile players under "Friendly", which is the opposite of
+            // what they are. Outside PvP the same player is just a bystander.
+            if (_clientState.IsPvP && GetAllianceIndex(entityId) < 0)
+                return CombatantType.Enemy;
+
             return CombatantType.FriendlyPlayer;
         }
         if (obj is IBattleChara)
