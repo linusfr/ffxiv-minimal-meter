@@ -1,10 +1,14 @@
-## 1.0.1 (2026-09-20)
+## 1.1.0 (2026-09-21)
+
+#### Feature
+
+* chrome-free meter with fixed columns, context auto-hide and demo mode (cd965a63)
 
 #### Bug Fixes
 
-* add png (3b11a284)
+* remove old feature residue (d98b2329)
 
 #### Chores
 
-* update readme (04824c97)
-* pluginmaster 1.0.0 [skip ci] (607bfbe0)
+* pluginmaster 1.0.1 [skip ci] (940ca673)
+
