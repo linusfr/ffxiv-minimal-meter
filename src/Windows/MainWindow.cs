@@ -414,43 +414,11 @@ public sealed class MainWindow : IDisposable
     // combatant, color-coded. For per-second metrics (DPS / HPS / DTPS), the value
     // shown is the rolling cumulative-divided-by-elapsed at each bin so the line
     // converges to the player's average rate.
-    private static readonly uint[] GraphLineColors =
-    {
-        0xFF6464FFu, // red-orange
-        0xFFFFC864u, // sky-blue
-        0xFF64C864u, // green
-        0xFF64C8FFu, // amber
-        0xFFFF64C8u, // purple
-        0xFF64FFFFu, // yellow
-        0xFFFFFF64u, // cyan
-        0xFFC864FFu, // pink
-    };
 
 
     // Returns the cumulative value of the selected metric at nBins evenly-spaced
     // time samples from 0..dur. For rate metrics (DPS / HPS), divides by elapsed.
     // Events are appended in time order, so we use a single forward sweep.
-    private static double[] ComputeSeries(
-        CombatantData c, bool isDamageBased, bool isRateMetric, double dur, int nBins)
-    {
-        var events = isDamageBased ? c.DamageEvents : c.HealingEvents;
-        var result = new double[nBins];
-        long running = 0;
-        int  evIdx   = 0;
-        double durMs = dur * 1000.0;
-        for (int i = 0; i < nBins; i++)
-        {
-            var binMs = (i + 1) * durMs / nBins;
-            while (evIdx < events.Count && events[evIdx].TickMs <= binMs)
-            {
-                running += events[evIdx].Amount;
-                evIdx++;
-            }
-            double elapsedSec = (i + 1) * dur / nBins;
-            result[i] = isRateMetric && elapsedSec > 0 ? running / elapsedSec : running;
-        }
-        return result;
-    }
 
     // ── Detail popup (right-click) ────────────────────────────────────────────
     private void DrawDetailPopup()

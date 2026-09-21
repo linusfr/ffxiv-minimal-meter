@@ -68,7 +68,6 @@ public sealed class MeterCanvas : IDisposable
     private static SKColor TitleAccent2 = new(0x4A, 0x50, 0x5E, 0xFF);
     private static SKColor TitleBorder  = new(0x2C, 0x2C, 0x32, 0xFF);
     private static SKColor Divider      = new(0x2C, 0x2C, 0x32, 0xFF);
-    private static SKColor EncounterBg  = new(0x12, 0x12, 0x15, 0xFF);
     private static SKColor GroupSep     = new(0x26, 0x26, 0x2A, 0xFF);
     private static SKColor RowEven = new(0x1C, 0x1C, 0x1E, 0xFF);
     private static SKColor RowOdd  = new(0x16, 0x16, 0x18, 0xFF);
@@ -206,7 +205,7 @@ public sealed class MeterCanvas : IDisposable
     // advances by the column width rather than by its own text width. Otherwise a
     // row reading "12.4k" and one reading "980" push the next column to different
     // x positions and nothing lines up vertically.
-    private float _colValW, _colPctW, _colDpsW, _colHpsW, _colHealW, _colRankW;
+    private float _colPctW, _colDpsW, _colHpsW, _colHealW, _colRankW;
     private float _colTakenW, _colAvoidW, _colOverhealW, _colJobW, _colDmgW;
 
     /// Screen-space x ranges of the total row's figures, with the metric each
@@ -239,7 +238,7 @@ public sealed class MeterCanvas : IDisposable
     private void MeasureColumns(List<GroupData> groups, MeterType metric,
                                 double dur, DisplayOptions opts)
     {
-        _colValW = _colPctW = _colDpsW = _colHpsW = _colHealW = 0f;
+        _colPctW = _colDpsW = _colHpsW = _colHealW = 0f;
         _colTakenW = _colAvoidW = _colOverhealW = _colDmgW = 0f;
 
         float sc = Scale(opts);
@@ -282,10 +281,6 @@ public sealed class MeterCanvas : IDisposable
         {
             foreach (var c in measured)
             {
-                {
-                    var t = FormatVal((long)c.GetValue(metric, dur), metric, opts);
-                    _colValW = MathF.Max(_colValW, bold.MeasureText(t));
-                }
                 if (Col(opts, opts.ShowDamageValue, MeterType.DamageDealt))
                 {
                     var t = FormatVal(c.TotalDamageDealt, MeterType.DamageDealt, opts);
@@ -491,7 +486,7 @@ public sealed class MeterCanvas : IDisposable
                     var val = c.GetValue(metric, dur);
                     var pct = topVal > 0 ? val / topVal : 0.0;
 
-                    DrawRowMinimal(canvas, c, i + 1, i, w, rowY, rowH, val, pct, metric, dur, opts, BarColor(opts));
+                    DrawRowMinimal(canvas, c, i + 1, i, w, rowY, rowH, pct, metric, dur, opts, BarColor(opts));
                     _hitRows.Add((rowY, rowH, c));
                     rowY += rowH;
                 }
@@ -577,15 +572,11 @@ public sealed class MeterCanvas : IDisposable
         TotalHits.Clear();
         _recordingTotalHits = true;
 
-        {
-            _p.Color = Panel(EncounterBg, opts);
-            canvas.DrawRect(SKRect.Create(0, y, w, rowH), _p);
-        }
 
         // rank 0 suppresses the rank glyph and the job icon; pct 1 fills the bar,
         // since the total is by definition the maximum.
         DrawRowMinimal(canvas, total, 0, 0, w, y, rowH,
-                       total.GetValue(metric, dur), 1.0, metric, dur, opts, TextMuted);
+                       1.0, metric, dur, opts, TextMuted);
         _recordingTotalHits = false;
     }
 
@@ -700,7 +691,7 @@ public sealed class MeterCanvas : IDisposable
 
     // ── Minimal row (single-line condensed) ──────────────────────────────────
     private void DrawRowMinimal(SKCanvas canvas, CombatantData c, int rank, int rowIdx, int w,
-        float y, float rowH, double val, double pct, MeterType metric, double dur,
+        float y, float rowH, double pct, MeterType metric, double dur,
         DisplayOptions opts, SKColor barColor)
     {
         float sc = Scale(opts);
