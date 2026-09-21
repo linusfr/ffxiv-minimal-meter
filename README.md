@@ -22,9 +22,18 @@ Light party — the columns you enable, and nothing else:
 
 ![Light party](images/screenshots/light-party.png)
 
-Alliance raid, split into groups with per-group sums in the headers:
+Alliance raid — split into groups, each header carrying that group's sums, and
+your own party named by the alliance it is in rather than just "Party":
 
 ![Alliance raid](images/screenshots/alliance-raid.png)
+
+Crystalline Conflict:
+
+![Crystalline Conflict](images/screenshots/crystalline-conflict.png)
+
+Frontline, with groups past the visible ones collapsed:
+
+![Frontline](images/screenshots/frontline.png)
 
 </details>
 

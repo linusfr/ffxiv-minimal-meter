@@ -196,6 +196,16 @@ public sealed class SettingsWindow : IDisposable
             ImGui.TextColored(new Vector4(1f, 0.5f, 0.3f, 1f),
                 "Preview is active — the meter shows synthetic data, and every " +
                 "auto-hide rule is suspended so you can position it anywhere.");
+
+            // The presets past a full party are mostly non-party players, so
+            // with that filter off they render eight rows and look broken.
+            if (Config.DemoCombatants > 8 && !Config.ShowFriendlyGroup)
+            {
+                ImGui.TextColored(new Vector4(1f, 0.5f, 0.3f, 1f),
+                    "Only 8 rows will show: everyone past your party is a " +
+                    "non-party player, and \"Include friendly (non-party) " +
+                    "players\" is off under Filters.");
+            }
         }
     }
 

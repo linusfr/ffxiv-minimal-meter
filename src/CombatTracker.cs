@@ -1090,6 +1090,42 @@ public sealed class CombatTracker : IDisposable
         return -1;
     }
 
+    /// <summary>
+    /// Which alliance group the local player's own party occupies, or -1.
+    ///
+    /// Your own eight live in the party array, not the alliance array, so they
+    /// never turn up in GetAllianceIndex. The alliance array holds the *other*
+    /// groups — so the index yours occupies is simply the one missing from it.
+    /// </summary>
+    public static unsafe int GetOwnAllianceIndex()
+    {
+        var group = FFXIVClientStructs.FFXIV.Client.Game.Group.GroupManager
+                        .Instance()->GetGroup();
+        if (group == null || !group->IsAlliance) return -1;
+
+        int groups   = group->AllianceGroupIndexCount;
+        int perGroup = group->IsSmallGroupAlliance ? 4 : 8;
+
+        Span<bool> seen = stackalloc bool[groups];
+        for (int g = 0; g < groups; g++)
+        {
+            for (int i = 0; i < perGroup; i++)
+            {
+                var member = group->GetAllianceMemberByGroupAndIndex(g, i);
+                if (member != null && member->EntityId != 0) { seen[g] = true; break; }
+            }
+        }
+
+        int missing = -1;
+        for (int g = 0; g < groups; g++)
+        {
+            if (seen[g]) continue;
+            if (missing >= 0) return -1;   // more than one gap: cannot say which is ours
+            missing = g;
+        }
+        return missing;
+    }
+
     private CombatantType DetermineType(uint entityId, IGameObject obj)
     {
         if (obj is IPlayerCharacter)

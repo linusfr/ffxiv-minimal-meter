@@ -146,7 +146,9 @@ public sealed class Configuration : IPluginConfiguration
     /// Split non-party players into their alliance groups instead of one
     /// "Friendly" lump. Only does anything in alliance content; elsewhere there
     /// are no alliances to split by.
-    public bool GroupByAlliance    { get; set; } = false;
+    /// On by default, so the moment friendly players are shown they arrive
+    /// already split rather than as one undifferentiated block.
+    public bool GroupByAlliance    { get; set; } = true;
     /// Drop the group header when there is only one group to head. With the
     /// other groups filtered out there is nothing to distinguish, so the header
     /// is a row of chrome labelling the obvious.

@@ -196,9 +196,27 @@ public sealed class MainWindow : IDisposable
             var friendly = _frameSession.GetSortedByType(metric, CombatantType.FriendlyPlayer);
             var enemies  = _frameSession.GetSortedByType(metric, CombatantType.Enemy);
 
-            if (party.Count    > 0) groups.Add(new MeterCanvas.GroupData { Label = "Party",    Combatants = party,    Accent = MeterCanvas.GroupAccent(CombatantType.PartyMember) });
-            bool showFriendly = Config.ShowFriendlyGroup || Config.DemoCombatants > 0;
-            if (friendly.Count > 0 && showFriendly)
+            if (party.Count > 0)
+            {
+                // When the other alliances are named A/B/C, calling your own
+                // group "Party" hides the one label you actually want: which of
+                // them you are standing in.
+                int own = Config.GroupByAlliance ? CombatTracker.GetOwnAllianceIndex() : -1;
+                if (own < 0 && Config.GroupByAlliance && Config.DemoCombatants > 0)
+                    own = 0;   // the preview's own party is alliance A by construction
+
+                groups.Add(new MeterCanvas.GroupData
+                {
+                    Label      = own >= 0 ? "Alliance " + (char)('A' + own) : "Party",
+                    Combatants = party,
+                    Accent     = MeterCanvas.GroupAccent(CombatantType.PartyMember),
+                });
+            }
+            // No preview bypass here. Ignoring the filter made the Alliance
+            // preset show 24 rows, but it also made unticking the filter do
+            // nothing — a preview that does not reflect your settings is worse
+            // than one that shows fewer rows.
+            if (friendly.Count > 0 && Config.ShowFriendlyGroup)
             {
                 if (Config.GroupByAlliance)
                 {
