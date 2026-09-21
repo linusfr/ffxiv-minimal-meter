@@ -1,10 +1,14 @@
-## 1.2.2 (2026-09-21)
+## 1.2.3 (2026-09-21)
 
 #### Bug Fixes
 
-* end of line (b6a34aaf)
-* file hostile players in PvP as enemies, not friendlies (0ba21ab4)
+* end of line (2793e2ca)
+
+#### Documentation
+
+* drop the PvP screenshots, now redundant (3738f771)
 
 #### Chores
 
-* pluginmaster 1.2.1 [skip ci] (0f36b83e)
+* pluginmaster 1.2.2 [skip ci] (6cec4263)
+

@@ -14,12 +14,12 @@
       "dps",
       "parsing"
     ],
-    "AssemblyVersion": "1.2.2.0",
+    "AssemblyVersion": "1.2.3.0",
     "RepoUrl": "https://github.com/linusfr/ffxiv-minimal-meter",
     "DownloadLinkInstall": "https://github.com/linusfr/ffxiv-minimal-meter/releases/latest/download/MinimalMeter.zip",
     "DownloadLinkUpdate": "https://github.com/linusfr/ffxiv-minimal-meter/releases/latest/download/MinimalMeter.zip",
     "DownloadLinkTesting": "https://github.com/linusfr/ffxiv-minimal-meter/releases/latest/download/MinimalMeter.zip",
-    "LastUpdated": 1790023537,
+    "LastUpdated": 1790024148,
     "IconUrl": "https://raw.githubusercontent.com/linusfr/ffxiv-minimal-meter/main/images/icon.png"
   }
 ]
