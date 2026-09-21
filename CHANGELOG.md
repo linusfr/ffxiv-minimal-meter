@@ -1,10 +1,11 @@
-## 1.2.0 (2026-09-21)
+## 1.2.1 (2026-09-21)
 
-#### Feature
+#### Bug Fixes
 
-* label your own alliance, split by alliance by default (28a5f451)
-* add screenshots (35f492dc)
+* keep restored window geometry, and drop the total row when solo (d7c17785)
 
 #### Chores
 
-* pluginmaster 1.1.0 [skip ci] (d4766a8e)
+* run prek (1247e822)
+* pluginmaster 1.2.0 [skip ci] (ddf4e344)
+
