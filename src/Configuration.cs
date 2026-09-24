@@ -177,6 +177,22 @@ public sealed class Configuration : IPluginConfiguration
 
     // ── Window ────────────────────────────────────────────────────────────────
 
+    // Where the meter sits, kept here rather than left to ImGui's dalamudUI.ini.
+    // The meter is usually hidden when the game starts (HideWhenEmpty), so the
+    // window is first submitted well after login, and ImGui clamps a window into
+    // whatever the viewport measures at that moment — which is not yet the final
+    // resolution. That clamp is what moved a meter pinned to the bottom right
+    // back towards the middle of the screen on every restart, and it overwrote
+    // the .ini as it went. Owning the position means the clamp can be undone.
+    /// False until the meter has recorded a placement, so an existing install
+    /// keeps whatever position ImGui restores on the first frame.
+    public bool  WindowPlaced  { get; set; } = false;
+    public float WindowX       { get; set; }
+    /// Y of the edge Grow pins: the bottom edge growing up, the top edge growing
+    /// down. Storing the anchored edge is what makes the meter come back where
+    /// it was — the other edge moves with the row count.
+    public float WindowAnchorY { get; set; }
+    public float WindowWidth   { get; set; } = 420f;
 
     /// One dial for size. Rows, glyphs, the job icon and padding all derive
     /// from it, so the meter scales as a single piece — previously RowHeight and
