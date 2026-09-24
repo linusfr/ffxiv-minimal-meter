@@ -1,13 +1,11 @@
-## 1.2.3 (2026-09-21)
+## 1.2.4 (2026-09-24)
 
 #### Bug Fixes
 
-* end of line (2793e2ca)
-
-#### Documentation
-
-* drop the PvP screenshots, now redundant (3738f771)
+* run prek (c8298fd5)
+* keep the meter where you pinned it across restarts (166c7bfe)
 
 #### Chores
 
-* pluginmaster 1.2.2 [skip ci] (6cec4263)
+* pluginmaster 1.2.3 [skip ci] (a1d582c5)
+
