@@ -8,4 +8,3 @@
 #### Chores
 
 * pluginmaster 1.2.3 [skip ci] (a1d582c5)
-
