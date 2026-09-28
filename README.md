@@ -1,10 +1,13 @@
-# Minimal Meter
-
-[![latest](https://img.shields.io/github/v/release/linusfr/ffxiv-minimal-meter?sort=semver&display_name=tag&label=latest&color=blue&cacheSeconds=300)](https://github.com/linusfr/ffxiv-minimal-meter/releases/latest)
-[![ci](https://img.shields.io/github/actions/workflow/status/linusfr/ffxiv-minimal-meter/ci.yml?branch=main&label=ci&cacheSeconds=300)](https://github.com/linusfr/ffxiv-minimal-meter/actions/workflows/ci.yml)
-[![licence](https://img.shields.io/github/license/linusfr/ffxiv-minimal-meter?color=blue)](LICENSE)
-
-> A damage meter that shuts up and shows you the numbers.
+<div align="center">
+	<img src="images/icon.png" alt="Minimal Meter icon" width="128">
+	<h1>Minimal Meter</h1>
+	<p>A damage meter that shuts up and shows you the numbers.</p>
+	<p>
+		<a href="https://github.com/linusfr/ffxiv-minimal-meter/releases/latest"><img src="https://img.shields.io/github/v/release/linusfr/ffxiv-minimal-meter?sort=semver&amp;display_name=tag&amp;label=latest&amp;color=blue&amp;cacheSeconds=300" alt="Latest release"></a>
+		<a href="https://github.com/linusfr/ffxiv-minimal-meter/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/linusfr/ffxiv-minimal-meter/ci.yml?branch=main&amp;label=ci&amp;cacheSeconds=300" alt="CI status"></a>
+		<a href="LICENSE"><img src="https://img.shields.io/github/license/linusfr/ffxiv-minimal-meter?color=blue" alt="MIT license"></a>
+	</p>
+</div>
 
 Most FFXIV meters want to be a dashboard: panels, gradients, title bars, a strip
 along the top reminding you this is a damage meter. Minimal Meter is the same
@@ -48,14 +51,14 @@ inherited crashes and races.
 
 ### Dalamud repo (recommended — auto-updates)
 
-`/xlsettings` → **Experimental** → Custom Plugin Repositories → paste, `+`, then
-click the **save** icon:
+In `/xlsettings`, open **Experimental** > **Custom Plugin Repositories**, paste
+this URL, click `+`, then save:
 
 ```
 https://raw.githubusercontent.com/linusfr/ffxiv-minimal-meter/main/pluginmaster.json
 ```
 
-Then `/xlplugins` → search **Minimal Meter** → Install.
+Then open `/xlplugins`, search for **Minimal Meter**, and select **Install**.
 
 ### Optional: IINACT, for other players' damage over time
 
@@ -171,7 +174,7 @@ needs the Windows targeting pack.
 `feat:` → minor, `feat!:` → major. It tags, releases, and CI attaches the zip and
 updates `pluginmaster.json`. commitizen gates commit messages as a hook.
 
-## Licence
+## License
 
-MIT — see [`LICENSE`](LICENSE). Lineage in
+MIT, see [`LICENSE`](LICENSE). Lineage in
 [`docs/PROVENANCE.md`](docs/PROVENANCE.md).
