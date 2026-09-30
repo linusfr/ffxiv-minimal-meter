@@ -44,11 +44,11 @@ public sealed class MainWindow : IDisposable
     private float   _bodyViewH;
     private float   _maxScroll;
 
-    // The meter places itself: every frame it asks the config where its anchored
-    // edge belongs and puts the window there, rather than letting ImGui remember
-    // the position in dalamudUI.ini. Growing upward falls out of that for free —
-    // ImGui anchors windows at the top-left, so pinning the bottom is just
-    // top = anchor - height, recomputed as the row count changes.
+    // GrowUpward: the window's height tracks its content, and the bottom edge
+    // stays put. ImGui anchors windows at the top-left, so each time the height
+    // changes we shift the position up by the same delta — which keeps the
+    // bottom pinned while leaving the user free to drag the window normally.
+    private float   _lastAutoHeight;
     private Vector2 _lastWindowPos;
     private Vector2 _lastWindowSize;
 
@@ -61,6 +61,18 @@ public sealed class MainWindow : IDisposable
     // Geometry changes are written into Config immediately and flushed to disk a
     // second after the last one, so a drag is one save rather than one per frame.
     private DateTime _geometryChangedAt = DateTime.MinValue;
+
+    // The saved position is re-asserted on the first frame and whenever the
+    // viewport resizes — the game settling after a loading screen, or a
+    // resolution change — because that is when ImGui drags windows around to
+    // keep them visible. Between those moments the window is left alone, so
+    // nothing here can fight a drag.
+    private Vector2 _lastViewportSize;
+    private bool    _restorePos = true;
+
+    // Which edge WindowAnchorY was measured from, so flipping Grow re-measures
+    // instead of reading a bottom edge as a top one.
+    private GrowDirection _anchorGrow;
     private int     _lastGroupCount = 1;
     private int     _lastCombatantCount = 2;   // assume a total until proven otherwise
     private DateTime? _leftCombatAt;
@@ -77,6 +89,7 @@ public sealed class MainWindow : IDisposable
         _plugin = plugin;
         _meter  = new MeterCanvas(Plugin.TextureProvider);
         _isVisible = _plugin.Config.MeterVisible;
+        _anchorGrow = _plugin.Config.Grow;
     }
 
     // ── Draw ──────────────────────────────────────────────────────────────────
@@ -154,31 +167,50 @@ public sealed class MainWindow : IDisposable
                 ImGui.SetNextWindowSize(new Vector2(420, autoH), ImGuiCond.FirstUseEver);
             }
 
-            // Put the window back on its anchored edge: the bottom when growing
-            // up, the top when growing down. Done every frame the window is not
-            // already there, which covers the row count changing, the position
-            // ImGui restores on the first frame after a restart, and ImGui
-            // clamping the window into a viewport that is briefly smaller than
-            // the game's — the last of which is what kept dragging a pinned
-            // meter back towards the middle of the screen.
-            if (Config.WindowPlaced)
+            // The viewport changing size is ImGui's cue to shove windows back
+            // inside it, and at startup it measures whatever the game has up
+            // mid-load rather than the final resolution — which is what moved a
+            // meter pinned to the bottom right towards the middle on every
+            // restart. So that, and the first frame after load, is when the
+            // saved position goes back on. Not every frame: ImGui applies a
+            // drag before Begin, so a position set here would swallow it.
+            var viewport = ImGui.GetMainViewport().Size;
+            if (viewport != _lastViewportSize)
+            {
+                _lastViewportSize = viewport;
+                _restorePos       = true;
+            }
+
+            if (Config.WindowPlaced && (_restorePos || !_windowSeen))
             {
                 float width = _windowSeen && _lastWindowSize.X >= MinWidth
                             ? _lastWindowSize.X
                             : Math.Clamp(Config.WindowWidth, MinWidth, 1000f);
-                var want = KeepOnScreen(
-                    new Vector2(Config.WindowX,
-                                Config.Grow == GrowDirection.Up
-                                    ? Config.WindowAnchorY - autoH
-                                    : Config.WindowAnchorY),
-                    new Vector2(width, autoH));
-
-                // Setting the position unconditionally would swallow the user's
-                // drag, since ImGui applies a drag before Begin and this would
-                // overwrite it. Only correct the window when it has drifted.
-                if (!_windowSeen || Vector2.Distance(want, _lastWindowPos) > 0.5f)
-                    ImGui.SetNextWindowPos(want, ImGuiCond.Always);
+                ImGui.SetNextWindowPos(
+                    KeepOnScreen(
+                        new Vector2(Config.WindowX,
+                                    Config.Grow == GrowDirection.Up
+                                        ? Config.WindowAnchorY - autoH
+                                        : Config.WindowAnchorY),
+                        new Vector2(width, autoH)),
+                    ImGuiCond.Always);
+                _restorePos = false;
             }
+            // Grew or shrank since last frame. Growing UP means moving the top
+            // edge by the delta so the bottom stays put; growing DOWN means
+            // leaving the position alone, since ImGui already anchors top-left.
+            else if (_windowSeen && Config.Grow == GrowDirection.Up
+                     && _lastAutoHeight > 0f && Math.Abs(autoH - _lastAutoHeight) > 0.5f)
+            {
+                // _lastWindowPos is captured after Begin() below; calling
+                // GetWindowPos() out here would read whichever window ImGui
+                // happened to close last, not ours.
+                ImGui.SetNextWindowPos(
+                    new Vector2(_lastWindowPos.X,
+                                _lastWindowPos.Y - (autoH - _lastAutoHeight)),
+                    ImGuiCond.Always);
+            }
+            _lastAutoHeight = autoH;
         }
 
         const float WinPad = 5f;
@@ -197,23 +229,22 @@ public sealed class MainWindow : IDisposable
 
         if (!open) { ImGui.End(); return; }
 
-        // Where the window actually ended up, which the next frame compares its
-        // anchor against.
-        var prevPos  = _lastWindowPos;
-        var prevSize = _lastWindowSize;
-        bool firstFrame = !_windowSeen;
+        // Remembered for the next frame's bottom-anchored reposition, and updated
+        // here so a user drag is picked up like any other position change.
         _lastWindowPos  = ImGui.GetWindowPos();
         _lastWindowSize = ImGui.GetWindowSize();
         _windowSeen     = true;
 
-        // Dragging the window, or its edge, is the only thing allowed to decide
-        // where the meter lives; everything else that can move a window is a
-        // side effect to be undone next frame. The first frame seeds the anchor
-        // from wherever ImGui put the window, so an existing install keeps its
-        // place instead of jumping once on update.
-        bool dragged = (_lastWindowPos != prevPos || _lastWindowSize.X != prevSize.X)
-                       && ImGui.IsMouseDragging(ImGuiMouseButton.Left);
-        if (!Config.WindowPlaced || (dragged && !firstFrame))
+        // Record where the user put it. The mouse being down is the test, not
+        // ImGui.IsMouseDragging: ImGui moves a window from the first pixel but
+        // only calls it a drag past a 6px threshold, so the opening pixels of
+        // every drag would be read as something else having moved the window.
+        // Anything that moves the window with the mouse up — the startup clamp
+        // above — leaves the saved position alone and is undone by the next
+        // restore. The first frame seeds the anchor from wherever ImGui put the
+        // window, so an existing install keeps its place.
+        if (!Config.WindowPlaced || Config.Grow != _anchorGrow
+            || ImGui.IsMouseDown(ImGuiMouseButton.Left))
             RememberGeometry(_lastWindowPos, _lastWindowSize);
 
         DrawCanvasHeader();   // renders SkiaSharp canvas + draws header slice
@@ -232,6 +263,7 @@ public sealed class MainWindow : IDisposable
     private void RememberGeometry(Vector2 pos, Vector2 size)
     {
         float anchorY = Config.Grow == GrowDirection.Up ? pos.Y + size.Y : pos.Y;
+        _anchorGrow   = Config.Grow;
         if (Config.WindowPlaced
             && MathF.Abs(Config.WindowX       - pos.X)   < 0.5f
             && MathF.Abs(Config.WindowAnchorY - anchorY) < 0.5f
@@ -253,17 +285,19 @@ public sealed class MainWindow : IDisposable
         _plugin.SaveConfig();
     }
 
-    /// Enough of the window stays reachable to grab it again, and no more: a
-    /// position that is merely off to one side of a viewport the game has not
-    /// finished resizing is left alone, so it comes back once the viewport does.
+    /// Keep a grabbable strip of the window on screen when the saved position
+    /// no longer fits the viewport — but never more of the window than there is,
+    /// or a one-row meter sitting on the bottom edge gets pushed off it.
     private static Vector2 KeepOnScreen(Vector2 pos, Vector2 size)
     {
         const float Grab = 80f;
         var vp = ImGui.GetMainViewport();
-        float minX = vp.Pos.X - size.X + Grab;
-        float maxX = vp.Pos.X + vp.Size.X - Grab;
+        float keepX = MathF.Min(Grab, size.X);
+        float keepY = MathF.Min(Grab, size.Y);
+        float minX = vp.Pos.X - size.X + keepX;
+        float maxX = vp.Pos.X + vp.Size.X - keepX;
         float minY = vp.Pos.Y;
-        float maxY = vp.Pos.Y + vp.Size.Y - Grab;
+        float maxY = vp.Pos.Y + vp.Size.Y - keepY;
         return new Vector2(Math.Clamp(pos.X, minX, MathF.Max(minX, maxX)),
                            Math.Clamp(pos.Y, minY, MathF.Max(minY, maxY)));
     }
