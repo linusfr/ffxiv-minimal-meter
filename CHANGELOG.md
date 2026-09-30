@@ -1,10 +1,12 @@
-## 1.2.4 (2026-09-24)
+## 1.2.5 (2026-09-30)
 
 #### Bug Fixes
 
-* run prek (c8298fd5)
-* keep the meter where you pinned it across restarts (166c7bfe)
+* moving the overlay was inconsistent (be40dbd7)
 
 #### Chores
 
-* pluginmaster 1.2.3 [skip ci] (a1d582c5)
+* run prek (624f7c29)
+* align style (571ecd8f)
+* pluginmaster 1.2.4 [skip ci] (77427c72)
+
