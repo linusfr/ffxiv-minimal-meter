@@ -10,6 +10,7 @@ public sealed class Plugin : IDalamudPlugin
 {
     // ── Injected services ─────────────────────────────────────────────────────
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
+    [PluginService] internal static IPlayerState            PlayerState     { get; private set; } = null!;
     [PluginService] internal static IPluginLog              Log             { get; private set; } = null!;
     [PluginService] internal static ICommandManager         CommandManager  { get; private set; } = null!;
     [PluginService] internal static IChatGui                ChatGui         { get; private set; } = null!;
@@ -104,9 +105,16 @@ public sealed class Plugin : IDalamudPlugin
     // ── Draw loop ─────────────────────────────────────────────────────────────
     private void OnDraw()
     {
+        // Settings stay reachable from the plugin installer wherever you are.
+        _settingsWindow.Draw();
+
+        // The meter belongs to a character. Without this it sits over the
+        // character selection screen and the title screen, measuring nothing.
+        if (!PlayerState.IsLoaded)
+            return;
+
         _mainWindow.Draw();
         _historyWindow.Draw();
-        _settingsWindow.Draw();
     }
 
     // ── Save config ───────────────────────────────────────────────────────────
